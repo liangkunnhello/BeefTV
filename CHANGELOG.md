@@ -9,6 +9,11 @@ All notable public changes to BeefTV are documented in this file.
 - Added reproducible local builds, automated quality checks, and multi-architecture container publishing.
 - Standardized public artifacts, runtime identifiers, documentation, and repository links on the BeefTV name.
 
+## v1.6.7
+
+- Raise the video duration ceiling to 30 seconds for the relay-gateway Seedance protocols (`ark-task-gateway-video`, `ark-task-gateway-video-25`). Verified against the gateway: a 30-second request is accepted (token usage exactly doubles versus 15 seconds) and returns a 30-second video.
+- Keep the official Volcengine Ark and Agent Plan protocols at their measured 1-15 second range.
+
 ## v1.6.6
 
 - Canvas navigation follows "middle-drag to pan, scroll to zoom": the mouse wheel and trackpad vertical scrolling now zoom around the pointer, while horizontal trackpad gestures and Shift + wheel keep panning.

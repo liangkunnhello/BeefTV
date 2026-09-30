@@ -356,6 +356,12 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
         video.references.minVideoDurationSeconds = 2;
         video.references.minAudioDurationSeconds = 2;
     }
+    if (protocol === "ark-task-gateway-video" || protocol === "ark-task-gateway-video-25") {
+        // 中转网关的 Seedance 实测接受到 30 秒：duration=30 时网关按 30 秒接单
+        // （usage completion_tokens 288225 正好是 15 秒 144113 的两倍）且能正常出片。
+        // 只放开这两个网关协议；官方方舟与 Agent Plan 的能力未实测，维持 1–15。
+        video.duration = { selection: "range", min: 1, max: 30, step: 1, default: 6 };
+    }
     if (protocol === "volcengine-ark-video" || protocol === "volcengine-ark-agent-plan-video" || protocol === "ark-task-gateway-video" || protocol === "ark-task-gateway-video-25" || protocol === "newapi-channel-1") video.resolutions = ["480p", "720p", "1080p"];
     if (protocol === "volcengine-ark-video" || protocol === "volcengine-ark-agent-plan-video" || protocol === "ark-task-gateway-video" || protocol === "ark-task-gateway-video-25") {
         video.watermark = { supported: true, default: false };
