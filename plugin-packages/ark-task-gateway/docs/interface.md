@@ -88,6 +88,39 @@
   仍然会返回任务号，只有查询阶段才暴露失败。
 
 <!-- BEEFTV_PLUGIN_MANIFEST_START -->
+## Seedance 2.5（provider `ark-task-gateway-video-25`）
+
+2.5 与 2.0 系列**同一网关、两套契约**，因此拆成两个 provider：
+
+| 操作 | `ark-task-gateway-video`（2.0 系列） | `ark-task-gateway-video-25`（2.5） |
+| --- | --- | --- |
+| create | `POST /v1/contents/generations/tasks`，body `{model, content[], ratio, resolution, duration, watermark}` | 同一路径，body **顶层 `prompt`**：`{model, prompt, ratio, resolution, duration, watermark, input_reference?, image_urls?}` |
+| poll | `GET /v1/contents/generations/tasks/{{taskId}}` | **`GET /v1/videos/{{taskId}}`** |
+| cancel | `DELETE /v1/contents/generations/tasks/{{taskId}}` | `DELETE /v1/videos/{{taskId}}` |
+
+2.5 的查询响应（实测）：
+
+```json
+// 进行中
+{ "id": "task_...", "object": "video", "model": "doubao-seedance-2.5", "status": "running", "created_at": 1790751061 }
+
+// 成功
+{ "id": "task_...", "status": "succeeded", "video_url": "https://.../xxx.mp4",
+  "metadata": { "url": "https://.../xxx.mp4" }, "usage": { ... } }
+```
+
+响应映射：`status ← response.status`；`videos ← response.video_url → response.metadata.url`；
+`taskId ← response.id`。
+
+**必须记住的坑**：2.5 的任务如果去查 `GET /v1/contents/generations/tasks/{id}`，
+网关会返回一段**聊天消息形状的响应**（`{"type":"message","role":"assistant","content":[{"type":"text","text":""}]}`），
+既没有 `status` 也没有 `video_url` → 任务会永远停在「上游生成中」。2.5 必须查 `/v1/videos/{id}`。
+
+参考图：单张用 `input_reference`，多张用 `image_urls`，**两者不可同时提供**；
+2.5 目前不接受参考视频/参考音频（据网关文档）。
+
+---
+
 ## Manifest 完整接口定义
 
 以下 JSON 与插件包内实际 `manifest.json` 逐字段一致，覆盖插件身份、权限、配置、鉴权、参数、校验、创建、Agent、查询、取消、结果下载、响应和 Agent 响应映射。`documentation` 字段的值就是当前完整文档；为避免文档在自身内部无限递归，JSON 中仅用等义占位文本表示正文。
