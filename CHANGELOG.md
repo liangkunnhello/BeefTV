@@ -9,6 +9,13 @@ All notable public changes to BeefTV are documented in this file.
 - Added reproducible local builds, automated quality checks, and multi-architecture container publishing.
 - Standardized public artifacts, runtime identifiers, documentation, and repository links on the BeefTV name.
 
+## v1.6.2
+
+- Add an `ark-task-gateway` protocol plugin for relay gateways that expose the Ark/Seedance task API under `/v1/contents/generations/tasks`, with the gateway address configured per channel.
+- Prefer `platform_task_id` when reading poll responses, so relay gateways that return their own internal task id no longer break subsequent polling.
+- Add macOS one-click start/stop scripts that prepare the Go and frontend toolchains, build the official plugin packages on demand, and record the real listener pid.
+- Build desktop installers for macOS (arm64, amd64) and Windows (amd64) from this repository and publish the signed updater feed `desktop-update.json` next to them.
+
 ## v1.6.1
 
 - Explain input and output moderation failures by text, image, video and audio, including copyright, privacy and counterfeit-content restrictions.

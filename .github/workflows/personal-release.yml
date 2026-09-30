@@ -1,9 +1,12 @@
 # 个人版双端构建（未签名 / 未公证）
 #
 # 与上游 release-desktop.yml 的区别：
-#   · 不依赖上游密钥（无 R2 存储、无更新签名私钥、不写 updates.beefapi.com）
-#   · 只在**本仓库**创建 GitHub Release 并挂产物
-#   · 产物未签名 / 未公证：macOS 首次打开需右键「打开」，Windows 会提示未知发布者
+#   · 不依赖上游的 R2 存储与 updates.beefapi.com，只写**本仓库**的 GitHub Release
+#   · 自动更新走本仓库 Releases：
+#       feed 地址 https://github.com/<owner>/<repo>/releases/latest/download/desktop-update.json
+#       资材地址 https://github.com/<owner>/<repo>/releases/download/<版本>/<文件名>
+#     签名用本仓库的 secret BEEFTV_UPDATER_PRIVATE_KEY + variable BEEFTV_UPDATER_PUBLIC_KEY
+#   · 产物本身仍未签名 / 未公证：macOS 首次打开需右键「打开」，Windows 会提示未知发布者
 #
 # 触发方式：推送 v* 标签，或在 Actions 页面手动触发
 
@@ -21,6 +24,12 @@ concurrency:
 
 permissions:
   contents: write
+
+env:
+  # 桌面端的自动更新源：本仓库的最新 Release 里的 desktop-update.json
+  BEEFTV_UPDATER_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/desktop-update.json
+  # feed 里每个平台资材的下载前缀（代码会拼成 <base>/<版本>/<文件名>）
+  UPDATER_DOWNLOAD_BASE: https://github.com/${{ github.repository }}/releases/download
 
 jobs:
   build:
@@ -80,12 +89,14 @@ jobs:
         env:
           BEEFTV_SKIP_LOCAL_VERIFY: "1"
           BEEFTV_WAILS_PLATFORM: ${{ matrix.wails_platform }}
+          BEEFTV_UPDATER_PUBLIC_KEY: ${{ vars.BEEFTV_UPDATER_PUBLIC_KEY }}
         run: ./scripts/build-beeftv-release.sh
 
       - name: Build Windows desktop
         if: runner.os == 'Windows'
         env:
           CGO_ENABLED: "1"
+          BEEFTV_UPDATER_PUBLIC_KEY: ${{ vars.BEEFTV_UPDATER_PUBLIC_KEY }}
         shell: pwsh
         run: powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-beeftv-windows-release.ps1
 
@@ -115,7 +126,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: Publish GitHub Release
+    name: Sign feed and publish Release
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -124,6 +135,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: backend/go.sum
+
       - name: Retrieve all platform builds
         uses: actions/download-artifact@v4
         with:
@@ -131,17 +148,53 @@ jobs:
           merge-multiple: true
           path: dist
 
+      - name: Verify updater credentials are configured
+        env:
+          BEEFTV_UPDATER_PUBLIC_KEY: ${{ vars.BEEFTV_UPDATER_PUBLIC_KEY }}
+          BEEFTV_UPDATER_PRIVATE_KEY: ${{ secrets.BEEFTV_UPDATER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$BEEFTV_UPDATER_PUBLIC_KEY" || -z "$BEEFTV_UPDATER_PRIVATE_KEY" ]]; then
+            echo "::error::缺少 BEEFTV_UPDATER_PUBLIC_KEY (variable) 或 BEEFTV_UPDATER_PRIVATE_KEY (secret)，无法签发自更新 feed。"
+            exit 1
+          fi
+
+      - name: Sign desktop-update.json
+        working-directory: backend
+        env:
+          BEEFTV_UPDATER_PUBLIC_KEY: ${{ vars.BEEFTV_UPDATER_PUBLIC_KEY }}
+          BEEFTV_UPDATER_PRIVATE_KEY: ${{ secrets.BEEFTV_UPDATER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '[:space:]' < ../VERSION)"
+          echo "VERSION=$VERSION"
+          ls -lh ../dist
+          go run ./cmd/update-release sign \
+            --version "$VERSION" \
+            --commit "${{ github.sha }}" \
+            --changelog ../CHANGELOG.md \
+            --download-base "$UPDATER_DOWNLOAD_BASE" \
+            --expect-public-key "$BEEFTV_UPDATER_PUBLIC_KEY" \
+            --require-platforms darwin-arm64,darwin-amd64,windows-amd64 \
+            --asset "darwin-arm64=../dist/BeefTV-${VERSION}-darwin-arm64.zip" \
+            --asset "darwin-amd64=../dist/BeefTV-${VERSION}-darwin-amd64.zip" \
+            --asset "windows-amd64=../dist/BeefTV-${VERSION}-windows-amd64.zip" \
+            --output "../dist/desktop-update.json"
+          go run ./cmd/update-release verify \
+            --envelope "../dist/desktop-update.json" \
+            --public-key-text "$BEEFTV_UPDATER_PUBLIC_KEY"
+          echo "--- feed 内容 ---"
+          cat ../dist/desktop-update.json
+
       - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           VERSION="$(tr -d '[:space:]' < VERSION)"
-          echo "VERSION=$VERSION | TAG=$TAG"
-          ls -lh dist
+          TAG="${{ github.ref_name }}"
           if [[ "$TAG" != v* ]]; then
-            # 手动触发时用 VERSION 作为标签
+            echo "手动触发，使用 VERSION 作为标签：$VERSION"
             TAG="$VERSION"
           fi
           notes_file="$RUNNER_TEMP/notes.md"
@@ -150,20 +203,22 @@ jobs:
 
           - 版本：$VERSION
           - 提交：${{ github.sha }}
-          - 产物为 **未签名 / 未公证** 构建：
-            - macOS 首次打开需 **右键 →「打开」** 放行（或系统设置 → 隐私与安全性 → 仍要打开）
-            - Windows 会提示「未知发布者」，选择「更多信息 → 仍要运行」
-          - 双击安装包里的 app 后，官方协议插件在应用同级目录的 \`plugin-packages/\` 下随包分发。
+          - 产物为**未签名 / 未公证**构建：macOS 首次打开需右键 →「打开」放行；Windows 会提示「未知发布者」。
 
-          与官方发布的区别：本 Release 未使用官方更新源与签名链路，不会自动更新。
+          ### 自动更新
+
+          桌面端内置的更新源已指向本仓库：
+          \`https://github.com/${{ github.repository }}/releases/latest/download/desktop-update.json\`。
+          安装本版本后，后续版本可直接在应用内检查更新。
           EOF
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/*.zip --clobber
-            gh release edit "$TAG" --notes-file "$notes_file"
+            gh release upload "$TAG" dist/*.zip dist/desktop-update.json --clobber
+            gh release edit "$TAG" --notes-file "$notes_file" --latest
           else
-            gh release create "$TAG" dist/*.zip \
+            gh release create "$TAG" dist/*.zip dist/desktop-update.json \
               --title "BeefTV $VERSION（个人构建）" \
               --notes-file "$notes_file" \
-              --target "${{ github.sha }}"
+              --target "${{ github.sha }}" \
+              --latest
           fi
-          gh release view "$TAG" --json url,assets --jq '.url, (.assets[].name)'
+          gh release view "$TAG" --json url,assets --jq '.url, (.assets[]? | "  \(.name)  \(.size)")'

@@ -11416,9 +11416,10 @@ html:not(.dark) .creation-studio-control:hover,
         backdrop-filter: none !important;
     }
 
-    /* LibTV 式默认选择光标：短促圆润的黑色箭头配细白描边，不使用发光或阴影。 */
+    /* 画布默认光标：直接给系统「抓手」，提示空白处可以拖拽（原先是自定义箭头选择光标）。
+       按下拖拽/空格平移时由 infinite-canvas.tsx 换成 cursor-grabbing。 */
     .canvas-cursor-select {
-        cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='22' viewBox='0 0 20 22'%3E%3Cpath d='M4.05 2.75c-.78-.38-1.64.34-1.38 1.17l4.05 13.1c.26.84 1.38 1.01 1.88.28l2.35-3.38 4.14-.63c.88-.14 1.17-1.25.46-1.78L4.05 2.75Z' fill='%23070707' stroke='%23fff' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E") 3 3, default;
+        cursor: grab;
     }
 
     /* 框选移动期只标记发生变化的 DOM 节点，避免每帧提交 React 选择状态。 */
