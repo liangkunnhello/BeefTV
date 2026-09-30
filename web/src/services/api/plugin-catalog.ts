@@ -1,6 +1,5 @@
 import { http } from "@/services/api/request";
 import type { ModelProtocolDefinition, ProtocolCapability } from "@/lib/model-protocols";
-import { workspaceCapabilities } from "@/services/workspace-mode";
 
 type PluginProviderCatalogItem = {
     id: string;
@@ -26,22 +25,21 @@ type PluginProviderCatalogItem = {
 };
 
 export async function fetchPluginProviderCatalog(scope: string, capability?: ProtocolCapability) {
-    if (workspaceCapabilities().local && scope === "user.custom-channel") {
-        return BUILTIN_OPENAI_PROTOCOLS.filter((item) => !capability || item.capability === capability);
-    }
+    const builtinProtocols = () => BUILTIN_OPENAI_PROTOCOLS.filter((item) => !capability || item.capability === capability);
+    // 协议目录来自后端插件运行时（含 Ark Task Gateway 等声明式协议）。
+    // 本地桌面档同样必须问后端：后端会按可执行文件旁边的 plugin-packages/ 导入官方插件，
+    // 早期版本在这里直接返回内置协议，导致插件协议在「模型与请求协议」里永远选不到。
     try {
         const result = await http.get<{ providers: PluginProviderCatalogItem[] }>("/plugins/catalog", { params: { scope, capability } });
-        return result.providers.filter((item) => item.enabled && !item.unavailableReason).map(toProviderDefinition);
+        const providers = result.providers.filter((item) => item.enabled && !item.unavailableReason).map(toProviderDefinition);
+        if (providers.length || scope !== "user.custom-channel") return providers;
     } catch (error) {
         // The local desktop profile can run without the optional plugin center.
         // Keep the built-in OpenAI-compatible protocols available so a custom
         // channel remains usable even when protocol metadata is unavailable.
-        if (scope === "user.custom-channel") {
-            const fallback = BUILTIN_OPENAI_PROTOCOLS.filter((item) => !capability || item.capability === capability);
-            if (fallback.length) return fallback;
-        }
-        throw error;
+        if (scope !== "user.custom-channel") throw error;
     }
+    return builtinProtocols();
 }
 
 const BUILTIN_OPENAI_PROTOCOLS: ModelProtocolDefinition[] = [

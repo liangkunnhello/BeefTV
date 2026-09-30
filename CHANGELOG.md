@@ -9,6 +9,10 @@ All notable public changes to BeefTV are documented in this file.
 - Added reproducible local builds, automated quality checks, and multi-architecture container publishing.
 - Standardized public artifacts, runtime identifiers, documentation, and repository links on the BeefTV name.
 
+## v1.6.4
+
+- Load the model protocol catalog from the backend plugin runtime instead of a hardcoded built-in list, so declarative plugin protocols (for example Ark Task Gateway) are selectable in the model request-protocol picker.
+
 ## v1.6.3
 
 - Fetch the channel model catalog through the same-origin backend on desktop builds, so pulling models no longer hangs when the webview cannot reach the upstream directly.
