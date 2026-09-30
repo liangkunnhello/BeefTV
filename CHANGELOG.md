@@ -9,6 +9,11 @@ All notable public changes to BeefTV are documented in this file.
 - Added reproducible local builds, automated quality checks, and multi-architecture container publishing.
 - Standardized public artifacts, runtime identifiers, documentation, and repository links on the BeefTV name.
 
+## v1.6.3
+
+- Fetch the channel model catalog through the same-origin backend on desktop builds, so pulling models no longer hangs when the webview cannot reach the upstream directly.
+- Allow the `X-Canvas-Upstream-Headers` request header in the desktop CORS middleware, so channels that carry custom headers pass their preflight.
+
 ## v1.6.2
 
 - Add an `ark-task-gateway` protocol plugin for relay gateways that expose the Ark/Seedance task API under `/v1/contents/generations/tasks`, with the gateway address configured per channel.

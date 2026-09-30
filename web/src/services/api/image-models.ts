@@ -1,4 +1,5 @@
 import { sanitizeChannelModelCatalogItem, type ChannelModelCatalogItem } from "@/lib/channel-model-catalog";
+import { isNativeDesktopRuntime } from "@/lib/runtime-mode";
 import { createChannelTransport } from "@/services/api/channel-transport";
 import { readAxiosError, validateGeminiPayload } from "@/services/api/image-response";
 import { geminiApiUrl, geminiHeaders } from "@/services/api/image-transport";
@@ -60,6 +61,11 @@ export type ChannelModelFetchResult = { models: string[]; catalog: ChannelModelC
 export async function fetchChannelModels(channel: ModelChannel, viaBackend = false): Promise<ChannelModelFetchResult> {
     const managed = channel.id === "beefapi" && (channel.pinned || Boolean(channel.credentialRef));
     if (managed) {
+        viaBackend = true;
+    }
+    // 桌面端（Mac 的 wails: 协议，或 Windows 的 wails.localhost 回环地址）里由网页直连上游
+    // 会卡住不返回；这里统一改走同源后端代取，与浏览器行为一致，也顺带绕开上游 CORS 依赖。
+    if (isNativeDesktopRuntime()) {
         viaBackend = true;
     }
     if (!viaBackend) {
