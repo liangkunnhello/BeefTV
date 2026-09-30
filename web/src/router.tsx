@@ -125,4 +125,10 @@ export const router = createBrowserRouter([
         ],
     },
     { path: "*", element: fullScreenDeferred(<NotFound />) },
-]);
+], {
+    /* 支持把前端部署在子路径下（瀚海把 BeefTV 前端挂在 /beef/）。
+       ⚠ 只设 Vite 的 base 不够 —— 那只改写静态资源 URL；react-router 仍按
+       location.pathname 匹配，于是 /beef/canvas 会掉进 NotFound 页。
+       BASE_URL 默认是 "/"，归一到 "/" 后与改动前行为完全一致。 */
+    basename: import.meta.env.BASE_URL.replace(/\/+$/, "") || "/",
+});

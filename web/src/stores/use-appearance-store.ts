@@ -9,8 +9,10 @@ export const DEFAULT_PUBLIC_APPEARANCE: PublicAppearance = {
     brandSlug: "beeftv",
     authHeroTitle: "让一个故事，\n从文字走向银幕。",
     authHeroDescription: "",
-    logoUrl: "/beef-logo.png",
-    darkLogoUrl: "/beef-logo.png",
+    /* 走 BASE_URL 而不是写死 "/beef-logo.png"：部署到子路径（瀚海挂在 /beef/）时，
+       写死的绝对路径会 404。BASE_URL 默认 "/"，拼接结果与改动前完全一致。 */
+    logoUrl: `${import.meta.env.BASE_URL}beef-logo.png`,
+    darkLogoUrl: `${import.meta.env.BASE_URL}beef-logo.png`,
     logoFrameEnabled: false,
     authVideoUrl: "https://boss-shjd.biliapi.net/updream/aniforge/video/video_bbcb00bd-650d-4249-9346-5cd21fd2484c_m1hc-u0-1pu13x-3v1s.mp4",
     authVideoPosterUrl: "https://i0.hdslb.com/bfs/aitool/aniforge/image/02933f26-5f1b-49ff-a811-b7f95ee5e5b8_m1hc-u0-sau.jpg",

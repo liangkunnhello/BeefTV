@@ -55,8 +55,11 @@ export async function pollSeedanceTask(deps: VideoProviderDeps, config: Resolved
 }
 
 function seedanceApiUrl(config: ResolvedAiConfig, taskId?: string) {
-    if (isVolcengineArkVideoProtocol(config.interfaceType) || isArkPlanBaseUrl(config.baseUrl)) return buildApiUrl(config.baseUrl, `/contents/generations/tasks${taskId ? `/${encodeURIComponent(taskId)}` : ""}`);
-    return buildApiUrl(config.baseUrl, `/videos${taskId ? `/${encodeURIComponent(taskId)}` : ""}`);
+    const suffix = taskId ? `/${encodeURIComponent(taskId)}` : "";
+    // 中转网关把厂商原生路径统一挂到 /v1 下（官方 Ark 是 /api/v3）。
+    if (config.interfaceType === "ark-task-gateway-video") return buildApiUrl(config.baseUrl, `/v1/contents/generations/tasks${suffix}`);
+    if (isVolcengineArkVideoProtocol(config.interfaceType) || isArkPlanBaseUrl(config.baseUrl)) return buildApiUrl(config.baseUrl, `/contents/generations/tasks${suffix}`);
+    return buildApiUrl(config.baseUrl, `/videos${suffix}`);
 }
 
 async function buildSeedanceAgentPlanPayload(config: ResolvedAiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], deps: VideoProviderDeps, options?: RequestOptions) {

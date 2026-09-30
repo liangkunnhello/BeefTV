@@ -15,7 +15,9 @@ export function isVolcengineArkImageProtocol(protocol?: string) {
     return protocol === "volcengine-ark-image" || protocol === "volcengine-ark-agent-plan-image";
 }
 export function isVolcengineArkVideoProtocol(protocol?: string) {
-    return protocol === "volcengine-ark-video" || protocol === "volcengine-ark-agent-plan-video";
+    // ark-task-gateway-video 面向中转网关：body 与官方 Ark 相同，
+    // 只是路径前缀落在 /v1 下（见 video-provider-seedance.ts 的 seedanceApiUrl）。
+    return protocol === "volcengine-ark-video" || protocol === "volcengine-ark-agent-plan-video" || protocol === "ark-task-gateway-video";
 }
 export function protocolForModelCatalog(_endpointTypes: string[] = []): ModelProtocol | undefined {
     // A provider catalog cannot invent a protocol ID. The channel's selected

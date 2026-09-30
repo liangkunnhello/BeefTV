@@ -1,0 +1,169 @@
+# 个人版双端构建（未签名 / 未公证）
+#
+# 与上游 release-desktop.yml 的区别：
+#   · 不依赖上游密钥（无 R2 存储、无更新签名私钥、不写 updates.beefapi.com）
+#   · 只在**本仓库**创建 GitHub Release 并挂产物
+#   · 产物未签名 / 未公证：macOS 首次打开需右键「打开」，Windows 会提示未知发布者
+#
+# 触发方式：推送 v* 标签，或在 Actions 页面手动触发
+
+name: Personal build (unsigned)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: personal-build-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: darwin-arm64
+            wails_platform: darwin/arm64
+          - os: macos-15-intel
+            platform: darwin-amd64
+            wails_platform: darwin/amd64
+          - os: windows-2022
+            platform: windows-amd64
+            wails_platform: windows/amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+
+      - name: Install MSYS2 UCRT64 GCC
+        id: msys2
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          release: true
+          path-type: inherit
+          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-binutils
+
+      - name: Assert DWARF 5 CGO compiler
+        if: runner.os == 'Windows'
+        env:
+          MSYSTEM_PREFIX: ${{ steps.msys2.outputs.msys2-location }}\ucrt64
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\assert-windows-dwarf5-cgo.ps1
+
+      - name: Build official plugin packages
+        if: runner.os != 'Windows'
+        run: sh plugin-packages/build-packages.sh
+
+      - name: Build macOS desktop
+        if: runner.os != 'Windows'
+        env:
+          BEEFTV_SKIP_LOCAL_VERIFY: "1"
+          BEEFTV_WAILS_PLATFORM: ${{ matrix.wails_platform }}
+        run: ./scripts/build-beeftv-release.sh
+
+      - name: Build Windows desktop
+        if: runner.os == 'Windows'
+        env:
+          CGO_ENABLED: "1"
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-beeftv-windows-release.ps1
+
+      - name: Package release zip
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          mkdir -p dist
+          input="cmd/desktop/build/bin"
+          if [[ "$PLATFORM" == darwin-* ]]; then
+            input="$input/BeefTV.app"
+          fi
+          ( cd backend && go run ./cmd/update-release package \
+              --platform "$PLATFORM" \
+              --input "$input" \
+              --output "../dist/BeefTV-${VERSION}-${PLATFORM}.zip" )
+          ls -lh "dist/BeefTV-${VERSION}-${PLATFORM}.zip"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.platform }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Retrieve all platform builds
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: dist
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          echo "VERSION=$VERSION | TAG=$TAG"
+          ls -lh dist
+          if [[ "$TAG" != v* ]]; then
+            # 手动触发时用 VERSION 作为标签
+            TAG="$VERSION"
+          fi
+          notes_file="$RUNNER_TEMP/notes.md"
+          cat > "$notes_file" <<EOF
+          ## 个人构建（未签名 / 未公证）
+
+          - 版本：$VERSION
+          - 提交：${{ github.sha }}
+          - 产物为 **未签名 / 未公证** 构建：
+            - macOS 首次打开需 **右键 →「打开」** 放行（或系统设置 → 隐私与安全性 → 仍要打开）
+            - Windows 会提示「未知发布者」，选择「更多信息 → 仍要运行」
+          - 双击安装包里的 app 后，官方协议插件在应用同级目录的 \`plugin-packages/\` 下随包分发。
+
+          与官方发布的区别：本 Release 未使用官方更新源与签名链路，不会自动更新。
+          EOF
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.zip --clobber
+            gh release edit "$TAG" --notes-file "$notes_file"
+          else
+            gh release create "$TAG" dist/*.zip \
+              --title "BeefTV $VERSION（个人构建）" \
+              --notes-file "$notes_file" \
+              --target "${{ github.sha }}"
+          fi
+          gh release view "$TAG" --json url,assets --jq '.url, (.assets[].name)'

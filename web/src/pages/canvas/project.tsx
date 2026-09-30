@@ -11,6 +11,7 @@ import { uploadMediaFile } from "@/services/file-storage";
 import { createCanvasGenerationLiveProjectAdapter, registerCanvasGenerationLiveProject } from "@/services/canvas-generation-consumer";
 import { getActiveUserScope, scopedLocalStorage } from "@/lib/user-scope";
 import { resourceFileUrl, resourceIdFromStorageKey, syncResourceToArkPrivateAsset } from "@/services/api/resources";
+import { apiBaseURL } from "@/services/api/request";
 import { uploadImage } from "@/services/image-storage";
 import { applyGenerationTaskResultToNodes, generationTaskMode, imageMetadata } from "@/lib/canvas/canvas-generation-task-sync";
 import { isCanvasImageSourceNode } from "@/lib/canvas/canvas-image-source";
@@ -332,7 +333,11 @@ function InfiniteCanvasPage() {
     }, [projectId, setNodes]);
     useEffect(() => {
         if (!projectId || !isLocalWorkspaceMode() || window.location.protocol !== "http:") return;
-        const source = new EventSource(`/api/canvas-projects/${encodeURIComponent(projectId)}/events`);
+        /* ⚠ 这里原先写死 "/api"，没跟 apiBaseURL 走 —— 页面被挂到 /beef/ 前缀下之后
+           （瀚海伺服 BeefTV 前端的形态），它会打到宿主自己的 /api/canvas-projects/... 上。
+           统一走 apiBaseURL，与 eagle.ts / agent.ts 的写法保持一致；
+           VITE_CANVAS_BACKEND_URL 未设置时 apiBaseURL 仍是 "/api"，行为不变。 */
+        const source = new EventSource(`${String(apiBaseURL).replace(/\/+$/, "")}/canvas-projects/${encodeURIComponent(projectId)}/events`);
         const sync = () => void refreshLocalCanvasProjectIfChanged(projectId).then((project) => {
             if (project) { setNodes(project.nodes || []); setConnections(project.connections || []); }
         });
