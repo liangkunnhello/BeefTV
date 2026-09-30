@@ -213,12 +213,18 @@ jobs:
           EOF
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/*.zip dist/desktop-update.json --clobber
-            gh release edit "$TAG" --notes-file "$notes_file" --latest
+            gh release edit "$TAG" --notes-file "$notes_file" --latest --draft=false
           else
             gh release create "$TAG" dist/*.zip dist/desktop-update.json \
               --title "BeefTV $VERSION（个人构建）" \
               --notes-file "$notes_file" \
               --target "${{ github.sha }}" \
-              --latest
+              --latest --draft=false
+          fi
+          # 必须是已发布状态：draft 的 /releases/latest/download/<资产> 不会生效，
+          # 桌面端更新器会因此取不到 feed。
+          if [[ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" == "true" ]]; then
+            echo "::error::Release $TAG 仍是 draft，自动更新 feed 地址将不可用。"
+            exit 1
           fi
           gh release view "$TAG" --json url,assets --jq '.url, (.assets[]? | "  \(.name)  \(.size)")'
