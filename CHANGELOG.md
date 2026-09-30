@@ -9,6 +9,12 @@ All notable public changes to BeefTV are documented in this file.
 - Added reproducible local builds, automated quality checks, and multi-architecture container publishing.
 - Standardized public artifacts, runtime identifiers, documentation, and repository links on the BeefTV name.
 
+## v1.6.6
+
+- Canvas navigation follows "middle-drag to pan, scroll to zoom": the mouse wheel and trackpad vertical scrolling now zoom around the pointer, while horizontal trackpad gestures and Shift + wheel keep panning.
+- Middle-drag panning now suppresses the browser/WebView middle-button defaults (autoscroll, paste, extra menus), so the gesture no longer fights the platform default.
+- Sync the canvas shortcut list and the feature docs with the navigation contract.
+
 ## v1.6.5
 
 - Support `doubao-seedance-2.5` through relay gateways with a dedicated `ark-task-gateway-video-25` protocol: the create request uses a top-level `prompt` instead of the Ark `content[]` array, and the task is polled on `GET /v1/videos/{task_id}`, whose task object carries `status` and `video_url`.

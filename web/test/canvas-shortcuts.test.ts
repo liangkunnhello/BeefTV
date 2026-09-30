@@ -13,12 +13,17 @@ describe("canvas shortcuts", () => {
         expect(filterCanvasShortcuts("自动布局").map((shortcut) => shortcut.id)).toContain("auto-arrange");
     });
 
-    test("documents default region selection and trackpad-friendly panning", () => {
+    test("documents default region selection, middle-drag panning and wheel zooming", () => {
         expect(CANVAS_SHORTCUTS.find((shortcut) => shortcut.id === "box-select")?.keys[0]).toEqual(["空白处左键拖动"]);
         expect(CANVAS_SHORTCUTS.find((shortcut) => shortcut.id === "pan")?.keys).toEqual([
-            ["触控板双指"],
             ["Space", "左键拖动"],
             ["中键拖动"],
+            ["触控板横向滑动"],
+        ]);
+        expect(CANVAS_SHORTCUTS.find((shortcut) => shortcut.id === "zoom-wheel")?.keys).toEqual([
+            ["滚轮"],
+            ["触控板双指"],
+            ["Ctrl/⌘", "滚轮"],
         ]);
     });
 

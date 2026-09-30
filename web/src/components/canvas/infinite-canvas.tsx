@@ -199,9 +199,11 @@ export function InfiniteCanvas({ interactive = true, containerRef, viewport, app
             const current = viewportRef.current;
             const rawAbsY = Math.abs(event.deltaY);
             const looksLikeMouseWheel = event.deltaMode !== 0 || (rawAbsY >= 80 && Math.abs(rawAbsY - Math.round(rawAbsY / 100) * 100) < 1);
-            const looksLikeTrackpadPan = !isPinchZoom && (event.shiftKey || absX > 0 || (!looksLikeMouseWheel && absY > 0));
+            // 只有「横向手势」（触控板两指横扫、shift+滚轮）继续当平移用；
+            // 其余滚动一律缩放 —— 导航约定为「中键拖动平移 + 滚轮缩放」。
+            const looksLikeHorizontalPan = !isPinchZoom && (event.shiftKey || (absX > 0 && absX >= absY));
 
-            if (looksLikeTrackpadPan) {
+            if (looksLikeHorizontalPan) {
                 const panX = event.shiftKey && absX < 1 ? deltaY : deltaX;
                 scheduleViewportChange({
                     x: current.x - panX,
@@ -412,10 +414,20 @@ export function InfiniteCanvas({ interactive = true, containerRef, viewport, app
         observer.observe(container);
         window.addEventListener("resize", updateRect);
         container.addEventListener("wheel", handleWheel, { passive: false, capture: true });
+        // 中键拖动平移：还要屏蔽浏览器/WebView 对中键的默认动作
+        // （Windows 与 WebView2 的自动滚动、Linux 的中键粘贴、部分环境弹出菜单），
+        // 否则会出现「一边平移一边滚屏」或松开中键后弹出额外交互。
+        const suppressMiddleButtonDefaults = (event: MouseEvent) => {
+            if (event.button === 1) event.preventDefault();
+        };
+        container.addEventListener("mousedown", suppressMiddleButtonDefaults);
+        container.addEventListener("auxclick", suppressMiddleButtonDefaults);
         return () => {
             observer.disconnect();
             window.removeEventListener("resize", updateRect);
             container.removeEventListener("wheel", handleWheel, { capture: true });
+            container.removeEventListener("mousedown", suppressMiddleButtonDefaults);
+            container.removeEventListener("auxclick", suppressMiddleButtonDefaults);
         };
     }, [interactive, containerRef, handleWheel]);
 
