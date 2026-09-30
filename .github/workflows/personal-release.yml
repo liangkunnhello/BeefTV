@@ -213,14 +213,18 @@ jobs:
           EOF
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/*.zip dist/desktop-update.json --clobber
-            gh release edit "$TAG" --notes-file "$notes_file" --latest --draft=false
+            gh release edit "$TAG" --notes-file "$notes_file" --draft=false
           else
             gh release create "$TAG" dist/*.zip dist/desktop-update.json \
               --title "BeefTV $VERSION（个人构建）" \
               --notes-file "$notes_file" \
               --target "${{ github.sha }}" \
-              --latest --draft=false
+              --draft=false
           fi
+          # 必须分两步：GitHub 拒绝把 draft 直接标成 latest
+          # （HTTP 422 "Latest release cannot be draft or prerelease."），
+          # 先取消草稿，再单独标 latest。
+          gh release edit "$TAG" --latest
           # 必须是已发布状态：draft 的 /releases/latest/download/<资产> 不会生效，
           # 桌面端更新器会因此取不到 feed。
           if [[ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" == "true" ]]; then
