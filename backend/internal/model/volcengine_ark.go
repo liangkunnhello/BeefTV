@@ -11,5 +11,6 @@ func IsVolcengineArkImageProtocol(protocol ChannelInterfaceType) bool {
 func IsVolcengineArkVideoProtocol(protocol ChannelInterfaceType) bool {
 	return protocol == ChannelInterfaceVolcengineArkVideo ||
 		protocol == ChannelInterfaceVolcengineArkAgentPlanVideo ||
-		protocol == ChannelInterfaceArkTaskGatewayVideo
+		protocol == ChannelInterfaceArkTaskGatewayVideo ||
+		protocol == ChannelInterfaceArkTaskGatewayVideo25
 }

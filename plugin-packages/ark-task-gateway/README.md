@@ -48,10 +48,25 @@
 
 很多中转网关的规律是「**厂商原生路径去掉 host 后统一挂到 `/v1`**」，本插件就是为这种网关准备的。
 
+## Seedance 2.5 用的是另一个 provider
+
+`doubao-seedance-2.5` 的入参与查询路径都和 2.0 系列不同，所以本插件提供了第二个协议：
+
+| | 2.0 / 2.0-fast | 2.5 |
+| --- | --- | --- |
+| Provider ID | `ark-task-gateway-video` | `ark-task-gateway-video-25` |
+| 创建 | `POST /v1/contents/generations/tasks`，body 用 `content[]` | 同一路径，body 用**顶层 `prompt`** |
+| 查询 | `GET /v1/contents/generations/tasks/{task_id}` | **`GET /v1/videos/{task_id}`** |
+| 结果字段 | `content.video_url` | `video_url`（同时有 `metadata.url`）|
+| 参考图 | `content[]` 里的 `image_url` + `role` | 单图 `input_reference`；多图 `image_urls`（两者不可同时给）|
+| 参考视频/音频 | 支持 | 据网关文档**不支持**，插件会直接报错提示 |
+
+> 踩坑记录：2.5 的任务**在 Ark 查询路径上会返回一段"聊天消息"形状的响应**
+> （`{"type":"message","role":"assistant",...}`），永远没有 `status`/`video_url` ——
+> 如果沿用它查询，任务会永远停在「上游生成中」。必须改用 `/v1/videos/{task_id}`。
+
 ## 已知限制
 
-- `doubao-seedance-2.5` 在上游的入参是顶层 `prompt`（而非 `content[]`），本插件按 2.0 系列编写；
-  部分网关对 2.5 的查询会返回非任务式响应，需按实际网关契约调整。
 - 参考素材需要上游可访问（公网 URL 或上游接受的内联形式）。
 
 细节与实测响应结构见 [docs/interface.md](docs/interface.md)。

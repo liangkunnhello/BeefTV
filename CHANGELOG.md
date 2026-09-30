@@ -9,6 +9,11 @@ All notable public changes to BeefTV are documented in this file.
 - Added reproducible local builds, automated quality checks, and multi-architecture container publishing.
 - Standardized public artifacts, runtime identifiers, documentation, and repository links on the BeefTV name.
 
+## v1.6.5
+
+- Support `doubao-seedance-2.5` through relay gateways with a dedicated `ark-task-gateway-video-25` protocol: the create request uses a top-level `prompt` instead of the Ark `content[]` array, and the task is polled on `GET /v1/videos/{task_id}`, whose task object carries `status` and `video_url`.
+- Map a single reference image to `input_reference` and multiple images to `image_urls`, matching the documented Seedance 2.5 parameter contract.
+
 ## v1.6.4
 
 - Load the model protocol catalog from the backend plugin runtime instead of a hardcoded built-in list, so declarative plugin protocols (for example Ark Task Gateway) are selectable in the model request-protocol picker.

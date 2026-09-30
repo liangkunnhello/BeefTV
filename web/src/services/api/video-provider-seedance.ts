@@ -56,6 +56,13 @@ export async function pollSeedanceTask(deps: VideoProviderDeps, config: Resolved
 
 function seedanceApiUrl(config: ResolvedAiConfig, taskId?: string) {
     const suffix = taskId ? `/${encodeURIComponent(taskId)}` : "";
+    // Seedance 2.5 在同一网关上用另一套查询路径：创建仍是 /v1/contents/generations/tasks，
+    // 任务状态走 /v1/videos/{id}（2.0 系列才走 /v1/contents/generations/tasks/{id}）。
+    if (config.interfaceType === "ark-task-gateway-video-25") {
+        return taskId
+            ? buildApiUrl(config.baseUrl, `/v1/videos${suffix}`)
+            : buildApiUrl(config.baseUrl, "/v1/contents/generations/tasks");
+    }
     // 中转网关把厂商原生路径统一挂到 /v1 下（官方 Ark 是 /api/v3）。
     if (config.interfaceType === "ark-task-gateway-video") return buildApiUrl(config.baseUrl, `/v1/contents/generations/tasks${suffix}`);
     if (isVolcengineArkVideoProtocol(config.interfaceType) || isArkPlanBaseUrl(config.baseUrl)) return buildApiUrl(config.baseUrl, `/contents/generations/tasks${suffix}`);
@@ -64,6 +71,10 @@ function seedanceApiUrl(config: ResolvedAiConfig, taskId?: string) {
 
 async function buildSeedanceAgentPlanPayload(config: ResolvedAiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], deps: VideoProviderDeps, options?: RequestOptions) {
     const profile = modelCapabilityConfigFor(config, model).video!;
+    // Seedance 2.5 的请求体是另一套：顶层 prompt + input_reference / image_urls，没有 content[]。
+    if (config.interfaceType === "ark-task-gateway-video-25") {
+        return buildSeedanceGateway25Payload(config, model, prompt, references, videoReferences, audioReferences, options);
+    }
     if (audioReferences.length && !references.length && !videoReferences.length && !profile.operations.includes("audio_to_video")) {
         throw new Error("当前视频模型不支持只用音频生成视频，请同时添加参考图片或参考视频");
     }
@@ -80,6 +91,40 @@ async function buildSeedanceAgentPlanPayload(config: ResolvedAiConfig, model: st
         ...(profile.generateAudio.supported ? { generate_audio: boolConfig(config.videoGenerateAudio, profile.generateAudio.default) } : {}),
         ...(profile.watermark.supported ? { watermark: boolConfig(config.videoWatermark, profile.watermark.default) } : {}),
     };
+}
+
+/**
+ * Seedance 2.5 走的是另一套入参：顶层 prompt + input_reference / image_urls，
+ * 没有 content[] 数组，也不接受参考视频/音频（据网关文档）。
+ */
+async function buildSeedanceGateway25Payload(
+    config: ResolvedAiConfig,
+    model: string,
+    prompt: string,
+    references: ReferenceImage[],
+    videoReferences: ReferenceVideo[],
+    audioReferences: ReferenceAudio[],
+    options?: RequestOptions,
+) {
+    const profile = modelCapabilityConfigFor(config, model).video!;
+    if (videoReferences.length) throw new Error("Seedance 2.5 暂不支持参考视频，请改用 2.0 系列，或只保留提示词与参考图片。");
+    if (audioReferences.length) throw new Error("Seedance 2.5 暂不支持参考音频，请改用 2.0 系列。");
+    const imagePlan = resolveVideoImageReferences(references, options, { videoCount: 0, audioCount: 0 });
+    const imageUrls = await Promise.all(imagePlan.map(({ image }) => (image.arkAssetId ? Promise.resolve(`asset://${image.arkAssetId}`) : resolveSeedanceImageUrl(image))));
+    const text = prompt.trim();
+    if (!text && !imageUrls.length) throw new Error("请输入视频提示词，或连接参考图片");
+    const payload: Record<string, unknown> = {
+        model: modelOptionName(model),
+        ...(text ? { prompt: text } : {}),
+        ratio: normalizeSeedanceRatio(config.size),
+        resolution: normalizeSeedanceResolution(config.vquality, modelOptionName(model)),
+        duration: normalizeSeedanceDuration(config.videoSeconds),
+        ...(profile.watermark.supported ? { watermark: boolConfig(config.videoWatermark, profile.watermark.default) } : {}),
+    };
+    // 单张图用 input_reference；多张图用 image_urls —— 文档要求两者不可同时提供。
+    if (imageUrls.length === 1) payload.input_reference = imageUrls[0];
+    else if (imageUrls.length > 1) payload.image_urls = imageUrls;
+    return payload;
 }
 
 async function buildVolcengineArkContent(prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], deps: VideoProviderDeps, options?: RequestOptions) {
