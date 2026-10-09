@@ -9,6 +9,12 @@ All notable public changes to BeefTV are documented in this file.
 - Added reproducible local builds, automated quality checks, and multi-architecture container publishing.
 - Standardized public artifacts, runtime identifiers, documentation, and repository links on the BeefTV name.
 
+## v1.6.8
+
+- Add the `wan-task-gateway` plugin (provider `wan-task-gateway-video`): one protocol for the Alibaba video family on relay gateways - `wan-3.0`, `wan3.0-video-prime`, `happyhorse-1.1-t2v/i2v/r2v` and `happyhorse-1.0-video-edit`. Create with `POST /v1/wan/video-generation/video-synthesis` plus `X-DashScope-Async: enable`, poll `GET /v1/wan/task/{task_id}`, and map first/last frame, reference image, reference video and driving audio by role and operation.
+- Publish a capability profile for the new protocol (480p/720p/1080p, 2-15 seconds, reference-to-video and video-edit operations).
+- Note: this protocol is implemented from the gateway contract plus the official DashScope documentation and has not been verified end-to-end yet - the six models still answer `503 no_available_providers` on the current channel key.
+
 ## v1.6.7
 
 - Raise the video duration ceiling to 30 seconds for the relay-gateway Seedance protocols (`ark-task-gateway-video`, `ark-task-gateway-video-25`). Verified against the gateway: a 30-second request is accepted (token usage exactly doubles versus 15 seconds) and returns a 30-second video.

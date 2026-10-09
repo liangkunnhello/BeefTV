@@ -367,6 +367,19 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
         video.watermark = { supported: true, default: false };
         video.operations.push("reference_to_video");
     }
+    if (protocol === "wan-task-gateway-video") {
+        // 阿里系（万相 wan / happyhorse）经中转网关：一套契约覆盖 t2v / i2v / r2v / 视频编辑，
+        // 因此把这几类操作都放开。上游 resolution 要求大写 P（插件自动转换），
+        // duration 为整数、官方文档 2–15 秒；驱动音频走素材而不是「生成音频」。
+        video.duration = { selection: "range", min: 2, max: 15, step: 1, default: 5 };
+        video.ratios = ["16:9", "9:16", "1:1", "4:3", "3:4"];
+        video.defaultRatio = "16:9";
+        video.resolutions = ["480p", "720p", "1080p"];
+        video.defaultResolution = "720p";
+        video.generateAudio = { supported: false, default: false };
+        video.watermark = { supported: true, default: false };
+        video.operations.push("reference_to_video", "video_to_video");
+    }
     if (protocol === "newapi-channel-2") {
         // APIMart 的 Seedance 2.0 Video Generations 协议支持参考视频/音频，
         // 但不是火山方舟 Agent Plan，因此单独声明全模态参考能力。
