@@ -9,6 +9,12 @@ All notable public changes to BeefTV are documented in this file.
 - Added reproducible local builds, automated quality checks, and multi-architecture container publishing.
 - Standardized public artifacts, runtime identifiers, documentation, and repository links on the BeefTV name.
 
+## v1.6.9
+
+- Verify the `wan-task-gateway` protocol end to end after the Alibaba models were enabled: create returns `output.task_id`, polling walks `PENDING -> RUNNING -> SUCCEEDED`, and `output.video_url` arrives. Verified both directly against the gateway and through BeefTV (5s 480P clip in 52 seconds).
+- Default `parameters.ratio` to `16:9`: the upstream rejects `adaptive` with `InvalidParameter` (allowed values are 16:9, 9:16, 4:3, 3:4, 1:1, 5:4, 4:5, 9:21, 21:9).
+- Document the real model ids as listed by `GET /v1/models` (`wan3.0-video`, `wan3.0-video-prime`, `happyhorse-1.1-t2v/i2v/r2v`, `happyhorse-1.0-video-edit`); `wan-3.0` does not exist and answers 503.
+
 ## v1.6.8
 
 - Add the `wan-task-gateway` plugin (provider `wan-task-gateway-video`): one protocol for the Alibaba video family on relay gateways - `wan-3.0`, `wan3.0-video-prime`, `happyhorse-1.1-t2v/i2v/r2v` and `happyhorse-1.0-video-edit`. Create with `POST /v1/wan/video-generation/video-synthesis` plus `X-DashScope-Async: enable`, poll `GET /v1/wan/task/{task_id}`, and map first/last frame, reference image, reference video and driving audio by role and operation.

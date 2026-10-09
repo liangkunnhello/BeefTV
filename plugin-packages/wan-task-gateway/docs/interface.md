@@ -100,12 +100,34 @@
 两者**不是同一份契约**：网关把阿里云原生路径改写成 `/v1/wan/...`，并把素材统一成 `media[]`
 （wan2.7 风格）。因此本插件单独实现，不复用官方那套字段。
 
-## 待办：端到端实测
+## 实测结论（2026-10-09 已跑通）
 
-见 [README 的实测状态](README.md)。当前只完成静态实现：
-这 6 个模型在 2026-10-09 实测均 `503 no_available_providers`，
-示例 Key 已失效（`401 invalid_api_key`）。开通后需按 README 的自检命令跑一遍，
-确认 `output.task_id` / `output.task_status` / `output.video_url` 三个字段与假设一致。
+创建返回 `{"output":{"task_id":…,"task_status":"PENDING"},"request_id":…}`；
+查询返回 `{"request_id":…,"output":{"task_id":…,"task_status":"RUNNING|SUCCEEDED","video_url":…,"code":…,"message":…},"usage":{…}}`，
+字段路径与本插件的映射**一致**，无需调整。
+
+### `parameters.ratio` 只能是这 9 个值
+
+`16:9`、`9:16`、`4:3`、`3:4`、`1:1`、`5:4`、`4:5`、`9:21`、`21:9`。
+
+传 `adaptive` 时创建仍返回 200，但**查询阶段**给出：
+
+```json
+{"output":{"task_status":"FAILED","code":"InvalidParameter",
+ "message":"Input should be '16:9', '9:16', '4:3', '3:4', '1:1', '5:4', '4:5', '9:21' or '21:9': parameters.ratio"}}
+```
+
+因此缺省值取 `16:9`（`$coalesce(request.aspectRatio, "16:9")`）。
+
+### 模型 ID
+
+以 `GET /v1/models` 为准：`wan3.0-video`、`wan3.0-video-prime`、
+`happyhorse-1.1-t2v`、`happyhorse-1.1-i2v`、`happyhorse-1.1-r2v`、`happyhorse-1.0-video-edit`。
+**不存在 `wan-3.0`**（该名字会得到 `503 no_available_providers`）。
+
+### 耗时参考
+
+`happyhorse-1.1-t2v` @480P/16:9/5s：直连约 60 秒；经 BeefTV 全链路 52 秒出片。
 
 <!-- BEEFTV_PLUGIN_MANIFEST_START -->
 ## Manifest 完整接口定义
@@ -377,7 +399,7 @@
                   {
                     "$ref": "request.aspectRatio"
                   },
-                  "adaptive"
+                  "16:9"
                 ]
               },
               "duration": {

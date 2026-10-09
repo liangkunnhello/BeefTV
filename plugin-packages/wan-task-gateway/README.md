@@ -87,28 +87,45 @@
 `task_status` 取值：`PENDING` / `RUNNING` / `SUCCEEDED` / `FAILED` / `CANCELED` / `UNKNOWN`（项目内置的状态归一全部认识）。
 **结果 URL 有效期通常 24 小时**，宿主会及时下载留存（`resultEphemeral = true`）。
 
-## ⚠️ 实测状态（重要，请先读）
+## ✅ 实测状态（2026-10-09 已跑通）
 
-本插件是**按网关文档 + 阿里云官方 DashScope 文档实现**的，**尚未端到端实测**：
+已端到端验证（模型权限开通后）：
 
-- 2026-10-09 用当前渠道 Key 实测这 6 个模型名，`POST /v1/wan/video-generation/video-synthesis`
-  全部返回 `503 no_available_providers`；网关的 `GET /v1/models` 里也没有这几个模型；
-- 需求方给出的示例 Key（`sk-6bf3…`）返回 `401 invalid_api_key`（已失效/被删）。
+| 环节 | 实测结果 |
+| --- | --- |
+| 创建 | `POST /v1/wan/video-generation/video-synthesis` → **200** `{"output":{"task_id":"…","task_status":"PENDING"},"request_id":"…"}` |
+| 查询 | `GET /v1/wan/task/{task_id}` → `PENDING → RUNNING → SUCCEEDED`，成功时 `output.video_url` 就绪 |
+| 出片 | `happyhorse-1.1-t2v`，480P / 16:9 / 5 秒，**约 60 秒**出片（直连）；走 BeefTV 全链路 **52 秒** 成功 |
+| 全链路 | 宿主发出的请求体与网关文档一致；`resolution` 自动转大写 P、`duration` 为整数 |
 
-也就是说：**请求与响应映射是按文档写的，但没有跑通一次真实出片。**
-模型在网关侧开通后，请按下面两条命令自检（把 `<KEY>` 与 `<MODEL>` 换成真实值）：
+### ⚠️ 坑 1：`ratio: "adaptive"` 会被拒（已修）
 
-```bash
-# 1) 创建任务
-curl -sS -X POST 'https://<你的网关>/v1/wan/video-generation/video-synthesis' \
-  -H 'Authorization: Bearer <KEY>' -H 'Content-Type: application/json' -H 'X-DashScope-Async: enable' \
-  -d '{"model":"<MODEL>","input":{"prompt":"测试镜头，缓慢推进"},"parameters":{"resolution":"480P","ratio":"adaptive","duration":5,"prompt_extend":true}}'
+`happyhorse-1.1-t2v` 拒绝 `adaptive`：
 
-# 2) 用返回的 output.task_id 查询
-curl -sS 'https://<你的网关>/v1/wan/task/<TASK_ID>' -H 'Authorization: Bearer <KEY>'
+```json
+{"output":{"task_status":"FAILED","code":"InvalidParameter",
+ "message":"Input should be '16:9', '9:16', '4:3', '3:4', '1:1', '5:4', '4:5', '9:21' or '21:9': parameters.ratio"}}
 ```
 
-若创建返回的结构不是 `output.task_id`、或查询状态字段不是 `output.task_status`，
-把真实响应发我，我按实际契约调整映射（映射已写成多路径 coalesce，能容忍大部分差异）。
+合法取值就是上面这 9 个。因此插件把缺省 `ratio` 从 `adaptive` 改为 **`16:9`**（渠道里给了画幅就按渠道的走）。
+**注意 `FAILED` 只在查询阶段才暴露**，创建仍然返回 200 + 任务号。
+
+### ⚠️ 坑 2：模型 ID 以网关模型列表为准
+
+`GET /v1/models` 里实际存在的是：
+
+```
+wan3.0-video   wan3.0-video-prime
+happyhorse-1.1-t2v   happyhorse-1.1-i2v   happyhorse-1.1-r2v
+happyhorse-1.0-video-edit
+```
+
+**没有 `wan-3.0` 这个 ID**（写 `wan-3.0` 会得到 `503 no_available_providers`，
+这句报错同时表示「模型名不对」和「上游暂时没容量」，容易被误导 —— 先用 `/v1/models` 核对名字）。
+
+### 上游抖动
+
+`wan3.0-video` 首次实测返回 `503 service_unavailable_error`（所有供应商暂时不可用），
+属上游容量抖动，重试即可；与模型名错误（也是 503）无法从文案区分，**先核对模型列表**。
 
 细节契约见 [docs/interface.md](docs/interface.md)。
