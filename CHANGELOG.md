@@ -9,6 +9,14 @@ All notable public changes to BeefTV are documented in this file.
 - Added reproducible local builds, automated quality checks, and multi-architecture container publishing.
 - Standardized public artifacts, runtime identifiers, documentation, and repository links on the BeefTV name.
 
+## v1.7.0
+
+- Auto-select the correct request protocol for known vendor models, so pulling models no longer leaves a beginner with a protocol that cannot work:
+  - `doubao-seedance-2.0` / `-2.0-fast` -> `ark-task-gateway-video`
+  - `doubao-seedance-2.5` -> `ark-task-gateway-video-25`
+  - `wan3.0-video`, `wan3.0-video-prime`, `happyhorse-*` -> `wan-task-gateway-video`
+- The rule only fires when the matching protocol plugin is installed and enabled, and only fills a protocol that is missing - a protocol the user picked by hand always wins.
+
 ## v1.6.9
 
 - Verify the `wan-task-gateway` protocol end to end after the Alibaba models were enabled: create returns `output.task_id`, polling walks `PENDING -> RUNNING -> SUCCEEDED`, and `output.video_url` arrives. Verified both directly against the gateway and through BeefTV (5s 480P clip in 52 seconds).

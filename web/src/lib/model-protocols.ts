@@ -1,5 +1,7 @@
 import type { ModelChannel } from "@/stores/use-config-store";
 
+import { inferProtocolFromModelName } from "@/lib/model-protocol-inference";
+
 export type ModelProtocol = string;
 export type ProtocolCapability = "text" | "image" | "video" | "audio";
 export type ModelProtocolWorkflow = { id: string; label: string; providerId: string; capability: ProtocolCapability; parameters: Array<{ name: string; type: string; required?: boolean; description?: string; values?: string[]; mapping?: string }>; defaults?: Record<string, string | number | boolean> };
@@ -97,6 +99,10 @@ export function defaultProtocolForCapability(capability: ProtocolCapability, ava
 }
 
 export function defaultProtocolForModel(model: string, availableProtocols: ModelProtocolDefinition[] = []): ModelProtocol {
+    // 已知厂商模型（豆包 Seedance、阿里系 wan / happyhorse）优先落到它们真正能跑通的专用协议，
+    // 避免「拉取模型后忘了改协议 → 一生成就失败」这种新手坑。
+    const inferred = inferProtocolFromModelName(model, availableProtocols);
+    if (inferred) return inferred;
     return defaultProtocolForCapability(inferProtocolCapabilityFromModel(model), availableProtocols);
 }
 
@@ -116,8 +122,8 @@ export function ensureModelProfilesWithUiDefaults(
     return models.map((model) => {
         const current = byModel.get(model);
         if (current?.protocol && current.capability) return { ...current, capability: current.capability, protocol: current.protocol };
-        const capability = current?.capability || modelProtocolCapability(current?.protocol, availableProtocols) || inferProtocolCapabilityFromModel(model);
-        const protocol = current?.protocol || (usesOpenAICompatibleProtocolDefault(apiFormat) ? defaultProtocolForCapability(capability, availableProtocols) : undefined);
+        const protocol = current?.protocol || (usesOpenAICompatibleProtocolDefault(apiFormat) ? defaultProtocolForModel(model, availableProtocols) : undefined);
+        const capability = current?.capability || modelProtocolCapability(protocol, availableProtocols) || inferProtocolCapabilityFromModel(model);
         return { ...current, model, capability, protocol };
     });
 }
