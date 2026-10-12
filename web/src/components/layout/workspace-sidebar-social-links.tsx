@@ -1,3 +1,6 @@
+// 【本 fork 已移除渲染】侧边栏左下角的 5 个推广入口：捐赠 / 官网 / GitHub / 微信二维码 / X。
+// 组件本身保留在仓库里（日后想恢复只需在 workspace-sidebar-nav.tsx 里加回一次调用），
+// 但对外分发的版本不再展示这些指向上游作者与官网的入口。
 import { Popover, Tooltip } from "antd";
 import { Globe, HandHeart, Star } from "lucide-react";
 import Github from "@lobehub/icons/es/Github";
