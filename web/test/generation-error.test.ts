@@ -378,4 +378,15 @@ describe("中转网关错误码归类", () => {
         expect(failure.category).toBe("provider_unavailable");
         expect(failure.message).toContain("暂时不可用");
     });
+
+    // 2026-10-12 实测：网关把上游的 404 透传过来（模型名/路径都对，换一跳就 200）。
+    test("上游缺端点的 404 不提示去改模型名", () => {
+        const failure = explainGenerationError({
+            status: 404,
+            data: JSON.stringify({ error: { code: "not_found_error", message: "请求路径或资源不存在：上游未找到对应端点。请检查客户端的请求地址配置（例如结尾是否多写了 /v1），以及模型名是否有效" } }),
+        });
+        expect(failure.category).toBe("provider_unavailable");
+        expect(failure.message).toContain("暂时不可用");
+        expect(failure.message).not.toContain("请检查模型名称");
+    });
 });

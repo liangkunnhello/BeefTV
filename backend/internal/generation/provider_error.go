@@ -384,6 +384,15 @@ func ClassifyHTTP(status int, statusText string, body string) Failure {
 		failure.Reason = "模型服务响应超时，请求可能仍在服务端执行"
 		failure.Action = "请先查询原任务或到供应商核对状态，不要立即重新提交"
 	}
+	// 网关把**上游**的 404 透传过来（实测「请求路径或资源不存在：上游未找到对应端点」）：
+	// 模型名与请求路径都正确，只是这一跳被路由到了没有该端点的上游 —— 换个上游就能过。
+	// 必须显式覆盖：404 不在 trustProviderMessageStatus 白名单里，消息级判定会被丢弃，
+	// 最终落到 404 → model_missing，提示用户去「检查模型名称和渠道配置」，属于误导。
+	if status == http.StatusNotFound && mentionsMissingUpstreamEndpoint(body) {
+		failure.Category = CategoryProviderUnavailable
+		failure.Reason = ""
+		failure.Action = ""
+	}
 	_ = statusText
 	return normalizeFailure(failure)
 }
@@ -799,6 +808,16 @@ func categoryFromProviderCode(values ...string) (FailureCategory, bool) {
 	return "", false
 }
 
+// missingUpstreamEndpointPattern 匹配网关透传的「上游没有对应端点」文案
+// （实测：「请求路径或资源不存在：上游未找到对应端点」）。
+var missingUpstreamEndpointPattern = regexp.MustCompile(`未找到对应端点|请求路径或资源不存在|endpoint not found`)
+
+// mentionsMissingUpstreamEndpoint 判断这段响应是不是「这一跳的上游没有该端点」。
+// 这类 404 与「模型名写错」必须分开：前者换一跳就通，应可重试。
+func mentionsMissingUpstreamEndpoint(body string) bool {
+	return missingUpstreamEndpointPattern.MatchString(strings.ToLower(body))
+}
+
 func categoryFromProviderMessage(raw string) (FailureCategory, bool) {
 	normalized := strings.ToLower(strings.TrimSpace(promptEchoPattern.ReplaceAllString(raw, "")))
 	if normalized == "" {
@@ -831,6 +850,12 @@ func categoryFromProviderMessage(raw string) (FailureCategory, bool) {
 		return CategoryThrottled, true
 	case strings.Contains(normalized, "context length") || strings.Contains(normalized, "maximum context") || strings.Contains(normalized, "too many tokens") || strings.Contains(normalized, "max_tokens") || strings.Contains(normalized, "长度") && (strings.Contains(normalized, "最大") || strings.Contains(normalized, "超出")):
 		return CategoryContextTooLong, true
+	case strings.Contains(normalized, "未找到对应端点") || strings.Contains(normalized, "请求路径或资源不存在") || strings.Contains(normalized, "endpoint not found"):
+		// 中转网关把**上游**的 404 透传过来（实测文案：「请求路径或资源不存在：上游未找到对应端点」）。
+		// 此时模型名与请求路径都正确，只是这一跳被路由到了没有该端点的上游 —— 换个上游就能过。
+		// 必须判定为「供应商不可用（可重试）」；否则会落到 404 → model_missing 的兜底，
+		// 把用户引向「检查模型名称和渠道配置」，而那是误导。
+		return CategoryProviderUnavailable, true
 	case strings.Contains(normalized, "model_not_found") || strings.Contains(normalized, "model not found") || strings.Contains(normalized, "does not exist") && strings.Contains(normalized, "model") || strings.Contains(normalized, "模型不存在") || strings.Contains(normalized, "模型或模型接口不存在"):
 		return CategoryModelMissing, true
 	case strings.Contains(normalized, "invalid api key") || strings.Contains(normalized, "incorrect api key") || strings.Contains(normalized, "authentication") || strings.Contains(normalized, "unauthorized") || strings.Contains(normalized, "鉴权失败"):

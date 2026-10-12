@@ -41,6 +41,16 @@ func TestHubGatewayErrorClassification(t *testing.T) {
 			category:   generation.CategoryProviderUnavailable,
 			wantReason: "",
 		},
+		{
+			// 2026-10-12 实测：网关把**上游**的 404 透传过来。此时模型名/路径都对，
+			// 只是被路由到了没有该端点的上游（同一请求换一跳就 200）→ 应可重试，
+			// 不能落进 404 → model_missing 的兜底去提示「检查模型名称和渠道配置」。
+			name:       "上游缺端点的 404 不能当成模型名错误",
+			status:     404,
+			body:       `{"error":{"code":"not_found_error","message":"请求路径或资源不存在：上游未找到对应端点。请检查客户端的请求地址配置（例如结尾是否多写了 /v1），以及模型名是否有效 (cch_session_id: sess_x)","type":"not_found_error"}}`,
+			category:   generation.CategoryProviderUnavailable,
+			wantReason: "暂时不可用",
+		},
 	}
 	for _, item := range cases {
 		t.Run(item.name, func(t *testing.T) {
