@@ -7,6 +7,7 @@ import { scopedLocalStorage } from "@/lib/user-scope";
 import { defaultProtocolForCapability, defaultProtocolForModel, modelProtocolCapability, normalizeModelProtocol, usesOpenAICompatibleProtocolDefault, type ModelProtocol } from "@/lib/model-protocols";
 import { normalizeVideoDuration, normalizeVideoResolution } from "@/lib/video-generation-options";
 import { defaultModelCapabilityConfig, workflowFieldRole, workflowFieldSafeToOverride, workflowVideoFieldsFromJson, type ModelCapabilityConfig } from "@/lib/model-capabilities";
+import { applyChannelAdaptation } from "@/lib/channel-adaptation";
 import { useUserStore } from "@/stores/use-user-store";
 import type { CapabilitySpec } from "@/services/api/logical-models";
 
@@ -701,7 +702,7 @@ export function normalizeConfigSnapshot(snapshot: ConfigStoreSnapshot | undefine
     };
     const hasPersistedChannels = Array.isArray(persistedConfig.channels);
     if (!hasPersistedChannels) config.channels = [];
-    const channels = normalizeChannels(config, !hasPersistedChannels).map(enrichBeefApiMediaChannel);
+    const channels = normalizeChannels(config, !hasPersistedChannels).map(enrichBeefApiMediaChannel).map(applyChannelAdaptation);
     const models = modelOptionsFromChannels(channels);
     const imageModels = filterModelsByCapability(models, "image", channels);
     const videoModels = filterModelsByCapability(models, "video", channels);
