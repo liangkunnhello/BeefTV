@@ -79,6 +79,15 @@ const (
 	ChannelInterfaceRunningHubVideo             ChannelInterfaceType = "runninghub-workflow-video"
 	ChannelInterfaceRunningHubAudio             ChannelInterfaceType = "runninghub-workflow-audio"
 
+	// ChannelInterfaceArkTaskGatewayVideo 面向前置中转网关的豆包 Seedance 任务式视频协议：
+	// body 与官方 Ark 完全一致，但网关把厂商原生路径统一挂到 /v1 下，
+	// 即 /v1/contents/generations/tasks，而非官方 Ark 的 /api/v3/contents/generations/tasks。
+	ChannelInterfaceArkTaskGatewayVideo ChannelInterfaceType = "ark-task-gateway-video"
+
+	// ChannelInterfaceArkTaskGatewayVideo25 是同一网关上的豆包 Seedance 2.5 专用协议：
+	// 创建请求用顶层 prompt（不是 content[]），任务状态查询走 GET /v1/videos/{task_id}。
+	ChannelInterfaceArkTaskGatewayVideo25 ChannelInterfaceType = "ark-task-gateway-video-25"
+
 	ApiCallStatusSucceeded ApiCallStatus = "succeeded"
 	ApiCallStatusFailed    ApiCallStatus = "failed"
 

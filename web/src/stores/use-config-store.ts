@@ -8,6 +8,8 @@ import { beefAPIVideoContract, isBeefAPIEndpoint } from "@/lib/beefapi-video-con
 import { defaultProtocolForCapability, defaultProtocolForModel, modelProtocolCapability, normalizeModelProtocol, usesOpenAICompatibleProtocolDefault, type ModelProtocol } from "@/lib/model-protocols";
 import { normalizeVideoBoolean, normalizeVideoDuration, normalizeVideoResolution } from "@/lib/video-generation-options";
 import { defaultModelCapabilityConfig, workflowFieldRole, workflowFieldSafeToOverride, workflowVideoFieldsFromJson, type ModelCapabilityConfig } from "@/lib/model-capabilities";
+import { applyChannelAdaptation } from "@/lib/channel-adaptation";
+import { BUILTIN_CHANNEL_SEEDS } from "@/lib/builtin-channels";
 import { useUserStore } from "@/stores/use-user-store";
 import type { CapabilitySpec } from "@/services/api/logical-models";
 import { seedancePortraitLabel, seedancePortraitModel, type VideoPriceQuote } from "@/lib/seedance-portrait";
@@ -678,6 +680,34 @@ export function configWithoutCachedSecrets(config: AiConfig): AiConfig {
     };
 }
 
+/**
+ * 把内置渠道种子并进渠道列表。
+ *
+ * 种子（`lib/builtin-channels.ts`）只声明「地址 + 模型名」，协议与能力画像交给紧随其后的
+ * `applyChannelAdaptation` 按 hostname 补齐（网关对应 `channel-adaptation.ts` 的 jetmobo-hub 预设）。
+ * 已存在的同 id 渠道保留使用者填写的密钥与自定义设置，只补缺失的模型。
+ */
+function mergeBuiltinChannelSeeds(channels: ModelChannel[]): ModelChannel[] {
+    if (!BUILTIN_CHANNEL_SEEDS.length) return channels;
+    const result = [...channels];
+    let changed = false;
+    for (const seed of BUILTIN_CHANNEL_SEEDS) {
+        const index = result.findIndex((channel) => channel.id === seed.id);
+        if (index < 0) {
+            result.push(createModelChannel({ ...seed, apiKey: "", enabled: true, pinned: true }));
+            changed = true;
+            continue;
+        }
+        const existing = result[index];
+        const missing = seed.models.filter((model) => !existing.models.includes(model));
+        if (!missing.length) continue;
+        result[index] = { ...existing, models: [...existing.models, ...missing] };
+        changed = true;
+    }
+    // 无变化时返回原引用，避免下游基于数组身份做无谓的重渲染。
+    return changed ? result : channels;
+}
+
 export function normalizeConfigSnapshot(snapshot: ConfigStoreSnapshot | undefined = {}) {
     // 坏存储/旧版本快照可能是 undefined 或缺 config，兜底为 defaultConfig，保证渲染不崩溃
     const persistedConfig = (snapshot?.config || {}) as Partial<AiConfig>;
@@ -720,7 +750,7 @@ export function normalizeConfigSnapshot(snapshot: ConfigStoreSnapshot | undefine
     };
     const hasPersistedChannels = Array.isArray(persistedConfig.channels);
     if (!hasPersistedChannels) config.channels = [];
-    const channels = normalizeChannels(config, !hasPersistedChannels).map(enrichBeefApiMediaChannel);
+    const channels = mergeBuiltinChannelSeeds(normalizeChannels(config, !hasPersistedChannels)).map(enrichBeefApiMediaChannel).map(applyChannelAdaptation);
     const models = modelOptionsFromChannels(channels);
     const imageModels = filterModelsByCapability(models, "image", channels);
     const videoModels = filterModelsByCapability(models, "video", channels);

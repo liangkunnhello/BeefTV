@@ -1,5 +1,7 @@
 import type { ModelChannel } from "@/stores/use-config-store";
 
+import { inferProtocolFromModelName } from "@/lib/model-protocol-inference";
+
 export type ModelProtocol = string;
 export type ProtocolCapability = "text" | "image" | "video" | "audio";
 export type ModelProtocolWorkflow = { id: string; label: string; providerId: string; capability: ProtocolCapability; parameters: Array<{ name: string; type: string; required?: boolean; description?: string; values?: string[]; mapping?: string }>; defaults?: Record<string, string | number | boolean> };
@@ -15,7 +17,10 @@ export function isVolcengineArkImageProtocol(protocol?: string) {
     return protocol === "volcengine-ark-image" || protocol === "volcengine-ark-agent-plan-image";
 }
 export function isVolcengineArkVideoProtocol(protocol?: string) {
-    return protocol === "volcengine-ark-video" || protocol === "volcengine-ark-agent-plan-video";
+    // ark-task-gateway-video 面向中转网关：body 与官方 Ark 相同，
+    // 只是路径前缀落在 /v1 下（见 video-provider-seedance.ts 的 seedanceApiUrl）。
+    // ark-task-gateway-video-25 是同网关的 Seedance 2.5 专用协议（顶层 prompt + /v1/videos 查询）。
+    return protocol === "volcengine-ark-video" || protocol === "volcengine-ark-agent-plan-video" || protocol === "ark-task-gateway-video" || protocol === "ark-task-gateway-video-25";
 }
 export function protocolForModelCatalog(_endpointTypes: string[] = []): ModelProtocol | undefined {
     // A provider catalog cannot invent a protocol ID. The channel's selected
@@ -97,6 +102,10 @@ export function defaultProtocolForCapability(capability: ProtocolCapability, ava
 }
 
 export function defaultProtocolForModel(model: string, availableProtocols: ModelProtocolDefinition[] = []): ModelProtocol {
+    // 已知厂商模型（豆包 Seedance、阿里系 wan / happyhorse）优先落到它们真正能跑通的专用协议，
+    // 避免「拉取模型后忘了改协议 → 一生成就失败」这种新手坑。
+    const inferred = inferProtocolFromModelName(model, availableProtocols);
+    if (inferred) return inferred;
     return defaultProtocolForCapability(inferProtocolCapabilityFromModel(model), availableProtocols);
 }
 
@@ -116,8 +125,8 @@ export function ensureModelProfilesWithUiDefaults(
     return models.map((model) => {
         const current = byModel.get(model);
         if (current?.protocol && current.capability) return { ...current, capability: current.capability, protocol: current.protocol };
-        const capability = current?.capability || modelProtocolCapability(current?.protocol, availableProtocols) || inferProtocolCapabilityFromModel(model);
-        const protocol = current?.protocol || (usesOpenAICompatibleProtocolDefault(apiFormat) ? defaultProtocolForCapability(capability, availableProtocols) : undefined);
+        const protocol = current?.protocol || (usesOpenAICompatibleProtocolDefault(apiFormat) ? defaultProtocolForModel(model, availableProtocols) : undefined);
+        const capability = current?.capability || modelProtocolCapability(protocol, availableProtocols) || inferProtocolCapabilityFromModel(model);
         return { ...current, model, capability, protocol };
     });
 }

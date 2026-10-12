@@ -8,6 +8,7 @@ import { WorkspaceState } from "@/components/layout/workspace-state";
 import { PageHeader } from "@/components/layout/workspace-page";
 import { mergeFetchedChannelModelProfiles } from "@/lib/channel-model-catalog";
 import { seedancePortraitModel } from "@/lib/seedance-portrait";
+import { channelAdaptationLabel } from "@/lib/channel-adaptation";
 import { ensureModelProfilesWithUiDefaults } from "@/lib/model-protocols";
 import { fetchChannelModels, type ChannelModelFetchResult } from "@/services/api/image";
 import { channelHasGenerationCredential, channelHasManagedBeefAPICredential, createModelChannel, defaultBaseUrlForApiFormat, filterModelsByCapability, isBuiltinBeefAPIChannel, modelOptionsFromChannels, normalizeConfigSnapshot, useConfigStore, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
@@ -323,6 +324,7 @@ export function ChannelSettingsPane({ onOpenDiagnostics, onOpenModels, onOpenRun
                     {userChannels.map((channel) => {
                         const editing = editingChannelId === channel.id;
                         const builtinBeefAPI = isBuiltinBeefAPIChannel(channel);
+                        const adaptationLabel = builtinBeefAPI ? `内置适配 · v${channel.presetVersion || 1}` : channelAdaptationLabel(channel);
                         return (
                             <section key={channel.id} aria-labelledby={`channel-${channel.id}-title`} className="settings-channel p-2.5 sm:p-3">
                                 <div className="mb-2.5 flex flex-wrap items-start justify-between gap-2.5">
@@ -340,6 +342,7 @@ export function ChannelSettingsPane({ onOpenDiagnostics, onOpenModels, onOpenRun
                                             ) : (
                                                 <span>{channelProtocolLabel(channel)} · 已保存 {channel.models.length} 个模型</span>
                                             )}
+                                            {adaptationLabel ? <span>应用{adaptationLabel}</span> : null}
                                             <ChannelStatus channel={channel} persistence={persistence} connection={builtinBeefAPI ? beefConnection : null} />
                                         </div>
                                     </div>
@@ -729,10 +732,13 @@ export function BeefAPIConnectionActions({
 
 export function modelConfigChannelPresentation(channel: ModelChannel) {
     const builtin = isBuiltinBeefAPIChannel(channel);
+    // 适配说明对所有命中适配预设的渠道都展示：BeefAPI 走内置适配，中转网关等走
+    // lib/channel-adaptation.ts 里的声明式预设，用户能一眼看到「这条渠道被自动配过」。
+    const adaptation = builtin ? `内置适配 · v${channel.presetVersion || 1}` : channelAdaptationLabel(channel);
     return {
         builtin,
         deletable: !builtin,
-        adapterLabel: builtin ? "应用内置适配" : "",
+        adapterLabel: adaptation ? `应用${adaptation}` : "",
     };
 }
 

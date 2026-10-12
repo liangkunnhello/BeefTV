@@ -463,7 +463,6 @@ describe("image transport errors go through the classifier", () => {
     test("readStatusError 402 is unknown billing", () => {
         expect(readStatusError(402, "请求失败")).toContain("计费或额度");
     });
-
     test("readFetchError classifies json body and strips html", async () => {
         const jsonResponse = new Response(JSON.stringify({ error: { message: "Your prompt or reference image was blocked by the content safety policy.", code: "content_policy_violation" } }), { status: 451 });
         expect(await readFetchError(jsonResponse, "请求失败")).toContain("内容安全审核");
@@ -508,4 +507,37 @@ test("media details preserve authentication and ignore prompt echoes", () => {
         expect(failure.requestId).toBe("req_media_auth_123");
     }
     expect(explainGenerationError({error: {code: "unknown", message: "Failure"}, prompt: "unsupported video codec"}).category).toBe("unknown");
+});
+
+// 中转网关（ai-claude-code-hub.jetmobo.com）的实测响应体，2026-10-12 抓取。
+describe("中转网关错误码归类", () => {
+    test("账号未开通模型是权限问题，不能提示检查模型名", () => {
+        const failure = explainGenerationError({
+            status: 403,
+            data: JSON.stringify({ error: { code: "model_not_allowed", message: "当前账号未开通模型 gpt-image-9，请联系管理员开通后重试" } }),
+        });
+        expect(failure.category).toBe("permission");
+        expect(failure.blockAutomaticRetry).toBe(true);
+        expect(failure.message).not.toContain("请检查模型名称");
+    });
+
+    test("无可用上游是供应商不可用，可稍后重试", () => {
+        const failure = explainGenerationError({
+            status: 503,
+            data: JSON.stringify({ error: { code: "service_unavailable_error", message: "所有供应商暂时不可用，请稍后重试" } }),
+        });
+        expect(failure.category).toBe("provider_unavailable");
+        expect(failure.message).toContain("暂时不可用");
+    });
+
+    // 2026-10-12 实测：网关把上游的 404 透传过来（模型名/路径都对，换一跳就 200）。
+    test("上游缺端点的 404 不提示去改模型名", () => {
+        const failure = explainGenerationError({
+            status: 404,
+            data: JSON.stringify({ error: { code: "not_found_error", message: "请求路径或资源不存在：上游未找到对应端点。请检查客户端的请求地址配置（例如结尾是否多写了 /v1），以及模型名是否有效" } }),
+        });
+        expect(failure.category).toBe("provider_unavailable");
+        expect(failure.message).toContain("暂时不可用");
+        expect(failure.message).not.toContain("请检查模型名称");
+    });
 });

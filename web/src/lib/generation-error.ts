@@ -140,6 +140,8 @@ const PROVIDER_CODE_CATEGORIES: Record<string, GenerationErrorCategory> = {
     setlimitexceeded: "quota_limit",
     inflightbatchsizeexceeded: "concurrency",
     modelnotopen: "permission",
+    // 中转网关 ai-claude-code-hub 实测码：账号未开通该模型（不是模型名写错）。
+    model_not_allowed: "permission",
     "operationdenied.servicenotopen": "permission",
     contentsecuritydetectionerror: "provider_unavailable",
     invalid_reference_audio: "invalid_params",
@@ -258,6 +260,8 @@ const PROMPT_ECHO = /((?:prompt|input|query)\s*[=:：]\s*)(?:"[^"]{0,400}"|'[^']
 const SIGNED_QUERY = /(?:[?&](?:signature|x-amz-signature|x-oss-signature|token|key)=)[^\s&]+/gi;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{5,127}$/;
 const UNSAFE_ID = /secret|token|password|apikey|api-key|bearer|sk-/i;
+// 网关透传的「上游没有对应端点」文案（实测：「请求路径或资源不存在：上游未找到对应端点」）。
+const MISSING_UPSTREAM_ENDPOINT_PATTERN = /未找到对应端点|请求路径或资源不存在|endpoint not found/i;
 
 type ExtractedFields = {
     code: string;
@@ -500,6 +504,13 @@ function classifyHttp(status: number | undefined, body: unknown): Classified {
         classified.uncertain = true;
         classified.reason = "模型服务响应超时，请求可能仍在服务端执行";
         classified.action = "请先查询原任务或到供应商核对状态，不要立即重新提交";
+    }
+    // 网关把上游的 404 透传过来（「请求路径或资源不存在：上游未找到对应端点」）：
+    // 模型名与路径都对，只是这一跳被路由到了没有该端点的上游 —— 换个上游就能过，属可重试。
+    // 必须显式覆盖：404 不在 trustProviderMessageStatus 白名单里，消息判定会被丢弃，
+    // 最终落到 404 → model_missing，提示用户去「检查模型名称和渠道配置」，属于误导。
+    if (status === 404 && MISSING_UPSTREAM_ENDPOINT_PATTERN.test(text)) {
+        classified = { category: "provider_unavailable", status, retryable: true };
     }
     if (status === 413 && classified.category === "input_too_large" && !classified.reason) {
         classified.reason = "整次请求的数据量超过接口上限";
@@ -865,6 +876,9 @@ function categoryFromProviderMessage(raw: string): GenerationErrorCategory | "" 
         return normalized.includes("arrearage") || normalized.includes("billing_hard_limit") ? "quota_upstream" : "quota_unknown";
     if (normalized.includes("rate limit") || normalized.includes("too many requests") || normalized.includes("throttl") || normalized.includes("频繁")) return "throttled";
     if (normalized.includes("context length") || normalized.includes("too many tokens") || normalized.includes("max_tokens") || (normalized.includes("长度") && (normalized.includes("最大") || normalized.includes("超出")))) return "context_too_long";
+    // 中转网关把上游的 404 透传过来（「请求路径或资源不存在：上游未找到对应端点」）：
+    // 模型名与路径都对，只是这一跳被路由到了没有该端点的上游 —— 判成可重试，别让用户去改配置。
+    if (normalized.includes("未找到对应端点") || normalized.includes("请求路径或资源不存在") || normalized.includes("endpoint not found")) return "provider_unavailable";
     if (normalized.includes("model_not_found") || normalized.includes("model not found") || normalized.includes("模型不存在") || normalized.includes("当前模型或接口不可用")) return "model_missing";
     if (normalized.includes("invalid api key") || normalized.includes("incorrect api key") || normalized.includes("authentication") || normalized.includes("unauthorized") || normalized.includes("鉴权失败")) return "auth";
     if (normalized.includes("permission") && (normalized.includes("denied") || normalized.includes("model") || normalized.includes("access"))) return "permission";

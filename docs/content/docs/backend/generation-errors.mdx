@@ -36,7 +36,7 @@ description: 画布、任务中心和批量生成如何把上游失败变成可�
 | 类目 | 典型信号 | 使用者下一步 | 自动重试 |
 | --- | --- | --- | --- |
 | `auth` | 401、invalid_api_key | 检查 API Key | 否 |
-| `permission` | 403、permission_denied | 检查渠道权限或换模型 | 否 |
+| `permission` | 403、permission_denied、model_not_allowed | 检查渠道权限或换模型 | 否 |
 | `quota_user` | insufficient_user_quota | 检查账号余额或联系管理员调整额度 | 否 |
 | `quota_unknown` | 402、insufficient_quota、余额/额度措辞 | 到渠道或供应商核对账单与额度 | 否 |
 | `quota_upstream` | arrearage、billing_hard_limit | 到供应商核对 | 否 |

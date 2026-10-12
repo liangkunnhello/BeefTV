@@ -30,12 +30,17 @@ type VideoSettingsPanelProps = {
 
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[292px] space-y-3", taskConstraints }: VideoSettingsPanelProps) {
     const profile = modelCapabilityConfigFor(config, config.model).video!;
-    if (resolveModelRequestConfig(config, config.model).interfaceType === "volcengine-jimeng-video") {
+    const interfaceType = resolveModelRequestConfig(config, config.model).interfaceType;
+    if (interfaceType === "volcengine-jimeng-video") {
         return <JiMengVideoSettingsPanel config={config} profile={profile} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
     }
     if (isSeedanceVideoConfig(config)) {
         return <SeedanceVideoSettingsPanel config={config} profile={profile} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} taskConstraints={taskConstraints} />;
     }
+    // 阿里系中转网关：图生视频时**输出比例跟随首帧参考图**（官方文档 + 2026-10-12 实测：
+    // 参考图 2304x1728(4:3) → 产出 1108x832(4:3)，请求里的 ratio 不生效）。
+    // 面板上方的 W×H 是按「比例 + 分辨率」换算出的参考值，必须说明，否则会被当成上游没按设置走。
+    const ratioFollowsFirstFrame = interfaceType === "wan-task-gateway-video";
 
     const seconds = normalizeVideoDuration(config.videoSeconds);
     const resolution = resolveVideoResolutionValue(profile, config.vquality);
@@ -85,9 +90,12 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                                 </button>
                             ))}
                         </div>
+                        {ratioFollowsFirstFrame ? (
+                            <p className="text-[var(--fs-label)] leading-snug opacity-70">接参考图时为「图生视频」：输出比例跟随首帧参考图，分辨率只控制总像素（上方尺寸为换算参考）。</p>
+                        ) : null}
                     </SettingGroup>
                 ) : null}
-                <SettingGroup title="秒数" color={theme.node.muted}>
+               <SettingGroup title="秒数" color={theme.node.muted}>
                     <VideoDurationControl profile={profile} value={Number(seconds)} theme={theme} onChange={(value) => onConfigChange("videoSeconds", String(value))} />
                 </SettingGroup>
                 {profile.generateAudio.supported || profile.watermark.supported ? (
