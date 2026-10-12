@@ -102,11 +102,12 @@ describe("channel adaptation presets", () => {
         expect(missing).toEqual([]);
         for (const model of HUB_MODELS) {
             const value = model.toLowerCase();
-            const expected = value.includes("seedream") || value.includes("gpt-image") || (value.includes("gemini-") && value.includes("image"))
-                ? "image"
-                : value.includes("seedance") || value.includes("wan3.0-video") || value.includes("happyhorse")
-                  ? "video"
-                  : "text";
+            const expected =
+                value.includes("seedream") || value.includes("gpt-image") || (value.includes("gemini-") && value.includes("image"))
+                    ? "image"
+                    : value.includes("seedance") || value.includes("wan3.0-video") || value.includes("happyhorse")
+                      ? "video"
+                      : "text";
             expect({ model, capability: profileOf(channel, model)?.capability }).toEqual({ model, capability: expected });
         }
     });
@@ -211,7 +212,10 @@ describe("channel adaptation presets", () => {
             protocol: "openai-image",
             displayName: "我的自定义名字",
             // 模拟「上一次适配留下的旧画像」：尺寸仍是画布的 1K 值（低于上游下限，必失败）
-            capabilityConfig: { ...defaultModelCapabilityConfig("openai-image", "Doubao-Seedream-5.0-lite"), image: { ...defaultModelCapabilityConfig("openai-image", "Doubao-Seedream-5.0-lite").image!, maxOutputs: 3, size: { parameter: "size", values: ["auto", "1024x1824"], default: "1024x1824", allowCustom: true } } },
+            capabilityConfig: {
+                ...defaultModelCapabilityConfig("openai-image", "Doubao-Seedream-5.0-lite"),
+                image: { ...defaultModelCapabilityConfig("openai-image", "Doubao-Seedream-5.0-lite").image!, maxOutputs: 3, size: { parameter: "size", values: ["auto", "1024x1824"], default: "1024x1824", allowCustom: true } },
+            },
         };
         const manualVideo = { model: "doubao-seedance-2.0", capability: "video" as const, protocol: "newapi-channel-2" };
         const channel = applyChannelAdaptation({ ...base, modelProfiles: [manualImage, manualVideo] });

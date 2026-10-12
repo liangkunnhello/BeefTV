@@ -280,8 +280,7 @@ function capabilityConfigEquals(left: ModelCapabilityConfig | undefined, right: 
         l.size.allowCustom === r.size.allowCustom &&
         l.size.default === r.size.default &&
         l.size.values.join("|") === r.size.values.join("|") &&
-        (l.size.presets || []).map((preset) => `${preset.tier}:${preset.ratio}:${preset.size}`).join("|") ===
-            (r.size.presets || []).map((preset) => `${preset.tier}:${preset.ratio}:${preset.size}`).join("|")
+        (l.size.presets || []).map((preset) => `${preset.tier}:${preset.ratio}:${preset.size}`).join("|") === (r.size.presets || []).map((preset) => `${preset.tier}:${preset.ratio}:${preset.size}`).join("|")
     );
 }
 
