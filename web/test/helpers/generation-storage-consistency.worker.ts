@@ -4,7 +4,7 @@ import { getActiveUserScope, setActiveUserScope } from "../../src/lib/user-scope
 
 type InstanceHook = (storeName: string, key: string, value: unknown) => Promise<void> | void;
 
-type Scenario = "image-cleanup" | "scope-cleanup-switch" | "scope-cleanup-late-canvas-reference" | "video-commit-race" | "audio-commit-race";
+type Scenario = "image-cleanup" | "scope-cleanup-switch" | "scope-cleanup-late-canvas-reference" | "video-commit-race" | "audio-commit-race" | "generation-commit-queue-race";
 
 function installStorageHarness() {
     const originalCreateInstance = localforage.createInstance.bind(localforage);
@@ -392,6 +392,124 @@ async function runMediaCommitRace(mediaType: "video" | "audio") {
     }
 }
 
+async function runGenerationCommitQueueRace(options: { corrupted: boolean } = { corrupted: false }) {
+    const previousScope = getActiveUserScope();
+    const harness = installStorageHarness();
+    const scope = options.corrupted ? "generation-commit-queue-race-corrupted" : "generation-commit-queue-race";
+    const projectId = "canvas-generation-commit-queue-race";
+    const nodeId = "text-node-queue-race";
+    const effectKey = `attach-node:task-text-queue-race:${nodeId}:0`;
+    const healedContent = "真人写实版提示词";
+    // corrupted 变体复刻已被写坏的节点：带着已确认的 effect stamp，但内容为空、状态仍是生成中。
+    const baseNode = {
+        id: nodeId,
+        type: "text",
+        title: "文本节点 1",
+        createdAt: "2026-10-12T08:46:09.772Z",
+        updatedAt: "2026-10-12T08:46:09.772Z",
+        position: { x: 0, y: 0 },
+        width: 350,
+        height: 350,
+        metadata: {
+            content: "",
+            status: "loading",
+            taskId: "task-text-queue-race",
+            fontSize: 14,
+            ...(options.corrupted ? { taskStatus: "succeeded", taskProgress: 100, generationEffectKeys: [effectKey] } : {}),
+        },
+    };
+    const canvasProject = {
+        id: projectId,
+        revision: 0,
+        title: "未命名项目",
+        createdAt: "2026-10-12T08:00:00.000Z",
+        updatedAt: "2026-10-12T08:00:00.000Z",
+        nodes: [baseNode],
+        connections: [],
+        chatSessions: [],
+        activeChatId: null,
+        backgroundMode: "dots",
+        showImageInfo: false,
+        viewport: { x: 0, y: 0, k: 1 },
+        directorScenes: [],
+    };
+    let injectedStaleSnapshot = false;
+
+    try {
+        setActiveUserScope(scope);
+        const { scopedStorageKey } = await import("../../src/lib/user-scope");
+        const { parseCanvasStorageDocument } = await import("../../src/lib/canvas/canvas-storage-revision");
+        // 先把「已经存在磁盘上」的画布写进 durable，再导入 store —— 与真实启动（先读库、后水合）一致。
+        const durableStoreKey = scopedStorageKey("infinite-canvas:canvas_store", scope);
+        await localforage.setItem(
+            durableStoreKey,
+            JSON.stringify({
+                state: { projects: [canvasProject] },
+                version: 0,
+                storageRevision: 5,
+                tombstones: { projects: {}, nodes: {}, connections: {}, sessions: {}, messages: {} },
+            }),
+        );
+        const { useCanvasStore, CANVAS_STORE_KEY, pendingCanvasStorePersistence } = await import("../../src/stores/canvas/use-canvas-store");
+        const { persistCanvasGenerationEffect } = await import("../../src/services/canvas-generation-consumer");
+        if (CANVAS_STORE_KEY !== "infinite-canvas:canvas_store") throw new Error("canvas store key changed");
+
+        // 等 store 水合结束，拿到与磁盘一致的项目快照。
+        for (let attempt = 0; attempt < 50 && !useCanvasStore.getState().hydrated; attempt += 1) {
+            await new Promise<void>((resolve) => harness.realSetTimeout(resolve, 0));
+        }
+        const hydratedProject = useCanvasStore.getState().projects.find((project) => project.id === projectId);
+        const hydratedNode = hydratedProject?.nodes.find((node) => node.id === nodeId);
+        if (!hydratedProject || !hydratedNode) throw new Error("store hydration did not pick up the seeded canvas");
+        const previousNode = hydratedNode;
+
+        // 生成提交写盘时，普通保存队列恰好抓到提交前的快照（真实场景里是提交结果还没送回 store、
+        // 而 React 刚把「绑定任务」的 setNodes 写进 store）。这里在「带生成结果的提交落盘」
+        // 的同一步注入这份旧快照，模拟提交与普通保存队列的真实交错。
+        const originalSetItem = localforage.setItem.bind(localforage);
+        localforage.setItem = (async (key: string, value: unknown) => {
+            const result = await originalSetItem(key, value);
+            if (!injectedStaleSnapshot && typeof value === "string" && key.includes("canvas_store") && value.includes(healedContent)) {
+                injectedStaleSnapshot = true;
+                useCanvasStore.setState((state) => ({
+                    projects: state.projects.map((project) => (project.id === projectId ? { ...project, nodes: [previousNode] } : project)),
+                }));
+            }
+            return result;
+        }) as typeof localforage.setItem;
+
+        let effectError: string | null = null;
+        await persistCanvasGenerationEffect({
+            projectId,
+            effectKey,
+            previousNodes: [previousNode],
+            nodes: [{ ...previousNode, metadata: { ...previousNode.metadata, content: healedContent, status: "success", generationEffectKeys: [effectKey] } }],
+            signal: new AbortController().signal,
+        } as never).catch((error: unknown) => {
+            effectError = error instanceof Error ? error.message : String(error);
+            return undefined;
+        });
+
+        const queuedContent = (pendingCanvasStorePersistence(scope)?.projects || []).find((project) => project.id === projectId)?.nodes?.[0]?.metadata?.content ?? null;
+        const durable = parseCanvasStorageDocument(await localforage.getItem<string>(durableStoreKey));
+        const durableNode = durable.state.projects.find((project) => project.id === projectId)?.nodes.find((node) => node.id === nodeId);
+        const liveNode = (useCanvasStore.getState().projects.find((project) => project.id === projectId)?.nodes || []).find((node) => node.id === nodeId);
+        return {
+            injectedStaleSnapshot,
+            effectError,
+            queuedContent,
+            durableContent: durableNode?.metadata?.content ?? null,
+            durableStatus: durableNode?.metadata?.status ?? null,
+            durableKeys: durableNode?.metadata?.generationEffectKeys?.length ?? 0,
+            liveContent: liveNode?.metadata?.content ?? null,
+            liveStatus: liveNode?.metadata?.status ?? null,
+        };
+    } finally {
+        setActiveUserScope(previousScope);
+        harness.restore();
+    }
+}
+
 self.onmessage = async (event: MessageEvent<Scenario>) => {
     try {
         const result =
@@ -401,7 +519,11 @@ self.onmessage = async (event: MessageEvent<Scenario>) => {
                   ? await runScopeCleanupAfterSwitch()
                   : event.data === "scope-cleanup-late-canvas-reference"
                     ? await runScopeCleanupAfterLateCanvasReference()
-                    : await runMediaCommitRace(event.data === "audio-commit-race" ? "audio" : "video");
+                    : event.data === "generation-commit-queue-race"
+                      ? await runGenerationCommitQueueRace()
+                      : event.data === "generation-commit-queue-race-corrupted"
+                        ? await runGenerationCommitQueueRace({ corrupted: true })
+                        : await runMediaCommitRace(event.data === "audio-commit-race" ? "audio" : "video");
         self.postMessage({ ok: true, result });
     } catch (error) {
         self.postMessage({ ok: false, error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) });

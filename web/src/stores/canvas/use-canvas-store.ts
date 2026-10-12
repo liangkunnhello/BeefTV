@@ -6,6 +6,7 @@ import { sameCanvasContent } from "@/lib/canvas/canvas-content";
 import { DEFAULT_CANVAS_BACKGROUND_MODE, normalizeCanvasAppearance, readCanvasAppearanceDefault, type CanvasAppearance } from "@/lib/canvas/canvas-appearance";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { parseCanvasStorageDocument, rebaseCanvasProjects, serializeCanvasStorageDocument, type CanvasStorageDocument } from "@/lib/canvas/canvas-storage-revision";
+import { generationEffectApplied } from "@/services/generation-consumer-dedupe";
 import { localForageStorageForScope } from "@/lib/localforage-storage";
 import { scopedLocalStorage } from "@/lib/user-scope";
 import { getActiveUserScope } from "@/lib/user-scope";
@@ -225,14 +226,16 @@ export function pendingCanvasStorePersistence(scope: string) {
     return queued ? { projects: queued.state.projects, token: queued.token } : null;
 }
 
-export function rebasePendingCanvasStorePersistenceAfterGenerationCommitLocked(scope: string, committed: CanvasStorageDocument) {
+export function rebasePendingCanvasStorePersistenceAfterGenerationCommitLocked(scope: string, committed: CanvasStorageDocument, committedEffectKey?: string) {
     const queued = queuedCanvasPersists.get(scope);
     if (!queued) return;
     const latestMemory = canvasMemoryStates.get(scope)?.projects ?? queued.state.projects;
     // Dedicated commit 已确认 generation stamp；用同 scope 最新内存重新投影队列，避免同节点普通编辑被旧 durable 快照替换。
+    // `committedEffectKey` 是刚提交的那条副作用：内存里可能还停在提交前的快照（提交结果尚未送回 store），
+    // 投影必须让这条副作用写过的节点以 committed 为准，否则会拼出「副作用已确认 + 内容为空」的节点。
     queued.baseProjects = committed.state.projects;
     queued.baseRevision = committed.storageRevision;
-    queued.state = ordinaryCanvasPersistenceState(scope, { projects: latestMemory }, committed.state.projects);
+    queued.state = ordinaryCanvasPersistenceState(scope, { projects: latestMemory }, committed.state.projects, committedEffectKey);
 }
 
 export function withCanvasStorePersistenceSuppressed<T>(operation: () => T) {
@@ -318,7 +321,10 @@ function pendingGenerationAttempt(scope: string, projectId: string, effectKeys?:
     return undefined;
 }
 
-function ordinaryCanvasProjectSnapshot(scope: string, project: CanvasProject, durableProject: CanvasProject | undefined) {
+function ordinaryCanvasProjectSnapshot(scope: string, project: CanvasProject, durableProject: CanvasProject | undefined, committedEffectKey?: string) {
+    // 没有 durable 快照就没有可对账的对方版本：此时任何「本窗口有 stamp、对方没有」都不构成冲突，
+    // 直接放行。（否则会给带 stamp 的节点走进回滚分支，在 durable 缺失时把节点整条丢掉。）
+    if (!durableProject) return project;
     if (!hasGenerationEffectKeys(project) && !hasGenerationEffectKeys(durableProject)) return project;
     const durableNodes = new Map((durableProject?.nodes || []).map((node) => [node.id, node]));
     const durableSessions = new Map((durableProject?.chatSessions || []).map((session) => [session.id, session]));
@@ -329,6 +335,15 @@ function ordinaryCanvasProjectSnapshot(scope: string, project: CanvasProject, du
         const durableNode = durableNodes.get(node.id);
         const durableKeys = durableNode?.metadata?.generationEffectKeys;
         const localKeys = node.metadata?.generationEffectKeys;
+        // 本条普通保存队列是在 generating commit 之前抓的快照：`durable` 里刚写回的节点才是权威版本。
+        // 若让内存里的旧快照带着已确认的 effect stamp 落盘，就会造出「副作用已确认 + 内容为空」的节点 ——
+        // 之后所有幂等守护都会把它当已应用而跳过修复，节点永久停在生成中（干活的证据见
+        // canvas-generation-queue-projection 用例）。
+        if (durableNode && committedEffectKey && generationEffectApplied(durableNode.metadata || {}, committedEffectKey)) {
+            if (!samePersistenceValue(durableNode, node)) changed = true;
+            nodes.push(durableNode);
+            continue;
+        }
         if (durableProject && hasUnconfirmedGenerationKey(localKeys, durableKeys)) {
             hasUnconfirmedGeneration = true;
             changed = true;
@@ -362,6 +377,12 @@ function ordinaryCanvasProjectSnapshot(scope: string, project: CanvasProject, du
     for (const session of project.chatSessions) {
         const durableSession = durableSessions.get(session.id);
         const durableKeys = durableSession?.generationEffectKeys;
+        // 与节点同理：本条提交刚写过的会话以 committed 为准，不能让旧快照带着 stamp 回去。
+        if (durableSession && committedEffectKey && generationEffectApplied(durableSession, committedEffectKey)) {
+            if (!samePersistenceValue(durableSession, session)) changed = true;
+            chatSessions.push(durableSession);
+            continue;
+        }
         if (durableProject && hasUnconfirmedGenerationKey(session.generationEffectKeys, durableKeys)) {
             hasUnconfirmedGeneration = true;
             changed = true;
@@ -414,11 +435,17 @@ function sameGenerationEffectKeys(left?: readonly string[], right?: readonly str
     return left.every((value, index) => value === right[index]);
 }
 
-function ordinaryCanvasPersistenceState(scope: string, state: PersistedCanvasState, durableProjects: CanvasProject[]) {
+function ordinaryCanvasPersistenceState(scope: string, state: PersistedCanvasState, durableProjects: CanvasProject[], committedEffectKey?: string) {
+    return { projects: projectOrdinaryCanvasProjects(scope, state.projects, durableProjects, committedEffectKey) };
+}
+
+/**
+ * 把内存快照投影成「相对 durable 可以安全当作普通保存提交」的状态。
+ * `committedEffectKey` 用于生成副作用专用提交：那条副作用刚写过的节点/会话必须以 durable 为准。
+ */
+export function projectOrdinaryCanvasProjects(scope: string, projects: CanvasProject[], durableProjects: CanvasProject[], committedEffectKey?: string) {
     const durableById = new Map(durableProjects.map((project) => [project.id, project]));
-    return {
-        projects: state.projects.map((project) => ordinaryCanvasProjectSnapshot(scope, project, durableById.get(project.id))),
-    };
+    return projects.map((project) => ordinaryCanvasProjectSnapshot(scope, project, durableById.get(project.id), committedEffectKey));
 }
 
 export function reconcileCanvasGenerationFailure(scope: string, durableProjects: CanvasProject[]) {

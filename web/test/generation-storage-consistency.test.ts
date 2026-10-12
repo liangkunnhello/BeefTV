@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-type Scenario = "image-cleanup" | "scope-cleanup-switch" | "scope-cleanup-late-canvas-reference" | "video-commit-race" | "audio-commit-race";
+type Scenario = "image-cleanup" | "scope-cleanup-switch" | "scope-cleanup-late-canvas-reference" | "video-commit-race" | "audio-commit-race" | "generation-commit-queue-race" | "generation-commit-queue-race-corrupted";
 type ScenarioResponse<T> = { ok: true; result: T } | { ok: false; error: string };
 
 function runScenario<T>(scenario: Scenario): Promise<T> {
@@ -49,4 +49,25 @@ test("generation video and audio materialization cannot race cleanup into a cata
         expect(result.blobPresent).toBe(true);
         expect(result.generationAssetCount).toBe(1);
     }
+});
+
+test("a stale ordinary save queued during the generation commit cannot strip the committed node content", async () => {
+    const result = await runScenario<{ injectedStaleSnapshot: boolean; durableContent: string | null; durableStatus: string | null; durableKeys: number; liveContent: string | null; liveStatus: string | null }>("generation-commit-queue-race");
+    expect(result.injectedStaleSnapshot).toBe(true);
+    // 回归：修复前 durable/live 上留下的是「已确认 effect stamp + 空内容 + loading」的节点，
+    // 之后所有幂等守护都会把它当作已应用而跳过修复，节点永久停在生成中。
+    expect(result.durableKeys).toBe(1);
+    expect(result.durableContent).toBe("真人写实版提示词");
+    expect(result.durableStatus).toBe("success");
+    expect(result.liveContent).toBe("真人写实版提示词");
+    expect(result.liveStatus).toBe("success");
+});
+
+test("replaying the task result heals a node already corrupted with a confirmed stamp and empty content", async () => {
+    const result = await runScenario<{ injectedStaleSnapshot: boolean; durableContent: string | null; durableStatus: string | null; durableKeys: number; liveContent: string | null }>("generation-commit-queue-race-corrupted");
+    expect(result.injectedStaleSnapshot).toBe(true);
+    expect(result.durableKeys).toBe(1);
+    expect(result.durableContent).toBe("真人写实版提示词");
+    expect(result.durableStatus).toBe("success");
+    expect(result.liveContent).toBe("真人写实版提示词");
 });

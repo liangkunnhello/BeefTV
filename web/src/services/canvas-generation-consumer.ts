@@ -496,7 +496,7 @@ export async function persistCanvasGenerationEffect(input: CanvasGenerationEffec
                 latestDurable = rebased.document;
                 generationCommittedProject = rebased.document.state.projects.find((candidate) => candidate.id === input.projectId);
                 recordCanvasStorageDocument(scope, rebased.document);
-                rebasePendingCanvasStorePersistenceAfterGenerationCommitLocked(scope, rebased.document);
+                rebasePendingCanvasStorePersistenceAfterGenerationCommitLocked(scope, rebased.document, input.effectKey);
 
                 while (pendingCanvasStorePersistence(scope)) {
                     const ordinaryDocument = await commitPendingCanvasStorePersistenceLocked(scope);
