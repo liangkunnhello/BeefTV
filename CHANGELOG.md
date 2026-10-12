@@ -9,6 +9,29 @@ All notable public changes to BeefTV are documented in this file.
 - Added reproducible local builds, automated quality checks, and multi-architecture container publishing.
 - Standardized public artifacts, runtime identifiers, documentation, and repository links on the BeefTV name.
 
+## v1.8.0
+
+- Channel adaptation presets: a channel can declare how its models map to request protocols and image capability
+  profiles. The first non-built-in preset covers a relay gateway, so pulling a channel no longer leaves the canvas
+  offering options the upstream does not accept:
+  - Seedream 5.0 lite / 4.5 expose only their official 2K sizes (their minimum is 2560x1440 = 3,686,400 pixels and
+    lite has no 1K tier), which removes the "generation always fails with a flattened 503" trap.
+  - Quality, transparent background and output format are only offered for models that really accept them.
+  - Video families receive the protocol they need (Seedance 2.0/2.5, wan3.0, happyhorse) together with per-family
+    duration and aspect-ratio enums.
+- Align the `wan-task-gateway` protocol with the official Wan3.0 API reference: audio media maps to
+  `reference_audio` and edited video to `reference_video` (the previous `driving_audio` / `video` values are not
+  part of the upstream enum); wan3.0 models accept durations up to 30 seconds; the video panel states that
+  image-to-video output follows the first frame's aspect ratio. The missing backend capability profile for this
+  protocol is filled in (it previously existed only in the frontend).
+- Classify the relay gateway's error codes: `model_not_allowed` is a permission problem (the model is not enabled
+  for the account) instead of a wrong model name.
+- Fix canvas persistence after a concurrent edit: a save rejected with 409 re-reads the server revision and retries
+  once, and the local merge keeps the other window's new nodes instead of replacing the whole project branch. This
+  is what made generated nodes disappear after a refresh.
+- Fix video node posters: the first-frame cache no longer stores session-bound `blob:` URLs, and a stale poster is
+  re-captured instead of showing "first frame unavailable" forever.
+
 ## v1.7.0
 
 - Auto-select the correct request protocol for known vendor models, so pulling models no longer leaves a beginner with a protocol that cannot work:
