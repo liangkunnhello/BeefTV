@@ -369,13 +369,27 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
     }
     if (protocol === "wan-task-gateway-video") {
         // 阿里系（万相 wan / happyhorse）经中转网关：一套契约覆盖 t2v / i2v / r2v / 视频编辑，
-        // 因此把这几类操作都放开。上游 resolution 要求大写 P（插件自动转换），
-        // duration 为整数、官方文档 2–15 秒；驱动音频走素材而不是「生成音频」。
-        video.duration = { selection: "range", min: 2, max: 15, step: 1, default: 5 };
-        video.ratios = ["16:9", "9:16", "1:1", "4:3", "3:4"];
+        // 因此把这几类操作都放开。上游 resolution 要求大写 P（插件自动转换）；
+        // 驱动音频走素材而不是「生成音频」。
+        //
+        // 时长按官方文档分家族（2026-10-12 核对 Model Studio「Wan3.0 视频生成」指南）：
+        // `wan3.0-video` / `wan3.0-video-prime` 的 `parameters.duration` 为 2–30 秒整数；
+        // happyhorse 系列没有公开文档，保守维持 2–15。
+        // `wan-3.0` 是网关侧文档给出的同族别名（2026-10-12 实测该 Key 下无可用上游，但 ID 被网关识别），
+        // 一并按 3.0 处理，上游开通后不必再改代码。
+        const wan3 = ["wan3.0-video", "wan3.0-video-prime", "wan-3.0"].includes(String(model ?? "").trim().toLowerCase());
+        // 两个家族的枚举**不一样**，必须按模型给（统一给一套会被上游拒）：
+        // - wan3.0（官方 API 参考）：adaptive / 21:9 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16，duration 2–30；
+        // - happyhorse（2026-10-09 实测，上游拒绝 adaptive）：上列 9 个具名画幅，duration 2–15。
+        video.duration = { selection: "range", min: 2, max: wan3 ? 30 : 15, step: 1, default: 5 };
+        video.ratios = wan3
+            ? ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
+            : ["16:9", "9:16", "4:3", "3:4", "1:1", "5:4", "4:5", "9:21", "21:9"];
         video.defaultRatio = "16:9";
         video.resolutions = ["480p", "720p", "1080p"];
         video.defaultResolution = "720p";
+        // 官方 `audio` 参数默认 true，但本协议同时服务 happyhorse（参数枚举与官方不完全一致），
+        // 在不发送 `audio` 的前提下不给「生成音频」开关，避免出现「开关无效」的假能力。
         video.generateAudio = { supported: false, default: false };
         video.watermark = { supported: true, default: false };
         video.operations.push("reference_to_video", "video_to_video");

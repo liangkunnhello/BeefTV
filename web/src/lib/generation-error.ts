@@ -103,6 +103,8 @@ const PROVIDER_CODE_CATEGORIES: Record<string, GenerationErrorCategory> = {
     setlimitexceeded: "quota_limit",
     inflightbatchsizeexceeded: "concurrency",
     modelnotopen: "permission",
+    // 中转网关 ai-claude-code-hub 实测码：账号未开通该模型（不是模型名写错）。
+    model_not_allowed: "permission",
     "operationdenied.servicenotopen": "permission",
     contentsecuritydetectionerror: "provider_unavailable",
     invalid_reference_audio: "invalid_params",

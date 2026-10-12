@@ -204,43 +204,43 @@
             "name": "videos",
             "type": "media[]",
             "required": false,
-            "mapping": "input.media[type=reference_video|video]",
-            "description": "参考视频；视频编辑类操作映射为 video。"
+            "mapping": "input.media[type=reference_video]",
+            "description": "参考视频 / 待编辑视频：官方类型表里只有 reference_video（最多 5 段，总时长 ≤15 秒）。"
           },
           {
             "name": "audios",
             "type": "media[]",
             "required": false,
-            "mapping": "input.media[type=driving_audio]",
-            "description": "驱动音频。"
+            "mapping": "input.media[type=reference_audio]",
+            "description": "参考音频：官方类型名为 reference_audio（最多 5 段，总时长 ≤15 秒）。"
           },
           {
             "name": "aspectRatio",
             "type": "string",
             "required": false,
             "mapping": "parameters.ratio",
-            "description": "输出画幅，例如 16:9；缺省 adaptive。"
+            "description": "输出画幅。缺省 16:9（happyhorse 实测拒绝 adaptive）；wan3.0 可选 adaptive。"
           },
           {
             "name": "resolution",
             "type": "string",
             "required": false,
             "mapping": "parameters.resolution（自动转大写 P）",
-            "description": "480p / 720p / 1080p。"
+            "description": "480P / 720P / 1080P；官方默认 1080P，这里显式传参（缺省 720P）以固定成本。"
           },
           {
             "name": "duration",
             "type": "integer",
             "required": false,
             "mapping": "parameters.duration",
-            "description": "时长秒数（整数）；<=0 时不传。"
+            "description": "时长秒数（整数）：wan3.0 无视频输入 2–30；happyhorse 2–15。<=0 时不传。"
           },
           {
             "name": "watermark",
             "type": "boolean",
             "required": false,
             "mapping": "parameters.watermark",
-            "description": "是否带 AI 水印。"
+            "description": "是否带 AI 水印；官方默认 false。"
           },
           {
             "name": "promptExtend",
@@ -340,23 +340,7 @@
                         },
                         "as": "media",
                         "in": {
-                          "type": {
-                            "$if": {
-                              "condition": {
-                                "$in": [
-                                  {
-                                    "$ref": "request.operation"
-                                  },
-                                  [
-                                    "video_edit",
-                                    "video_to_video"
-                                  ]
-                                ]
-                              },
-                              "then": "video",
-                              "else": "reference_video"
-                            }
-                          },
+                          "type": "reference_video",
                           "url": {
                             "$ref": "media.value"
                           }
@@ -372,7 +356,7 @@
                         },
                         "as": "media",
                         "in": {
-                          "type": "driving_audio",
+                          "type": "reference_audio",
                           "url": {
                             "$ref": "media.value"
                           }

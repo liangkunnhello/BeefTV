@@ -316,6 +316,28 @@ func DefaultModelCapabilityConfigForModel(protocol string, modelName string) *Mo
 	case model.ChannelInterfaceAgnesVideo:
 		video = applyModelSpecificVideoCapability(video, protocol, modelName)
 	}
+	if isWanGatewayVideoProtocol(protocol) {
+		// 阿里系（万相 wan / happyhorse）经中转网关：一套契约覆盖 t2v / i2v / r2v / 视频编辑。
+		// 依据 Model Studio「Wan3.0 视频生成 API 参考」（2026-10-12 核对）。
+		// 必须与前端 `web/src/lib/model-capabilities.ts` 的同名分支逐字段一致（见项目图谱 §4 联动矩阵）。
+		video.Operations = appendUniqueString(appendUniqueString(video.Operations, "reference_to_video"), "video_to_video")
+		video.Duration = VideoDurationConfig{Selection: "range", Min: 2, Max: 15, Step: 1, Default: 5}
+		// 两个家族的画幅枚举**不一样**，必须按模型给（详见前端同名分支的注释）：
+		// wan3.0 用官方 API 参考的 7 个值（含 adaptive）；happyhorse 用 2026-10-09 实测的 9 个具名画幅。
+		video.Ratios = []string{"16:9", "9:16", "4:3", "3:4", "1:1", "5:4", "4:5", "9:21", "21:9"}
+		if isWan3VideoModel(modelName) {
+			// 官方：无视频输入时 duration 取 [2,30] 整数；有视频输入时输入+输出 ≤30 秒。
+			video.Duration = VideoDurationConfig{Selection: "range", Min: 2, Max: 30, Step: 1, Default: 5}
+			video.Ratios = []string{"adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"}
+		}
+		video.DefaultRatio = "16:9"
+		video.Resolutions = []string{"480p", "720p", "1080p"}
+		video.DefaultResolution = "720p"
+		// 官方 `audio` 默认 true，但本协议同时服务 happyhorse（枚举与官方不完全一致），
+		// 在不发送 `audio` 的前提下不放开该开关，避免「开关无效」的假能力。
+		video.GenerateAudio = VideoBooleanConfig{Supported: false, Default: false}
+		video.Watermark = VideoBooleanConfig{Supported: true, Default: false}
+	}
 	if isSeedance2Family(protocol, modelName) {
 		video.References = overlayOfficialSeedance2References(video.References, isSeedance25Model(modelName))
 		if model.IsVolcengineArkVideoProtocol(model.ChannelInterfaceType(protocol)) {

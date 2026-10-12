@@ -65,6 +65,23 @@
 > （`{"type":"message","role":"assistant",...}`），永远没有 `status`/`video_url` ——
 > 如果沿用它查询，任务会永远停在「上游生成中」。必须改用 `/v1/videos/{task_id}`。
 
+### 2.5 的查询响应（实测）
+
+```json
+// 进行中
+{ "id": "task_...", "object": "video", "model": "doubao-seedance-2.5", "status": "running", "created_at": 1790751061 }
+
+// 成功
+{ "id": "task_...", "status": "succeeded", "video_url": "https://.../xxx.mp4",
+  "metadata": { "url": "https://.../xxx.mp4" }, "usage": { ... } }
+```
+
+响应映射：`status ← response.status`；`videos ← response.video_url → response.metadata.url`；`taskId ← response.id`。
+
+> 注：`docs/interface.md` 的「Manifest 完整接口定义」段落是**脚本生成区**
+> （`embed-documentation.mjs` 会重写该区内容），手写说明一律放本 README，
+> 否则下次重新生成文档时会被覆盖。
+
 ## 已知限制
 
 - 参考素材需要上游可访问（公网 URL 或上游接受的内联形式）。

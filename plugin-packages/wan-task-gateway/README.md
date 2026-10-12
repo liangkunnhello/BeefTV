@@ -128,4 +128,65 @@ happyhorse-1.0-video-edit
 `wan3.0-video` 首次实测返回 `503 service_unavailable_error`（所有供应商暂时不可用），
 属上游容量抖动，重试即可；与模型名错误（也是 503）无法从文案区分，**先核对模型列表**。
 
+**2026-10-12 补充实测**：该渠道下 `wan3.0-video` 与 `wan3.0-video-prime` **持续 503**
+（15:08 / 15:46 / 15:50 三次 BeefTV 任务 + 直连探测，均 `service_unavailable_error`），
+即使用**最小合法请求**（只给 `input.prompt`、不带任何素材）：
+
+```sh
+curl -sS "$GATEWAY/v1/wan/video-generation/video-synthesis" \
+  -H "Authorization: Bearer $API_KEY" -H 'Content-Type: application/json' -H 'X-DashScope-Async: enable' \
+  -d '{"model":"wan3.0-video","input":{"prompt":"一只橘猫在窗台上打盹"},
+       "parameters":{"resolution":"720P","ratio":"16:9","duration":5}}'
+# → HTTP 503 {"error":{"code":"service_unavailable_error","message":"所有供应商暂时不可用，请稍后重试"}}
+```
+
+同一时刻同协议的 `happyhorse-1.1-i2v` **可以正常出片**（200 / 124 秒）。
+⇒ 这两个模型是**上游未开通 / 无容量**，与请求参数无关（该渠道的 503 同时覆盖「无可用上游」
+「上游拒单」「任务号查不到」三种语义，所以**先用最小请求把参数因素排除掉**）。
+
+### 三个 wan 名字的实测对照（2026-10-12 15:5x，本渠道 Key）
+
+网关文档列出的阿里系可用模型写的是 **`wan-3.0`**（带横线），而 `GET /v1/models` 里是
+`wan3.0-video` / `wan3.0-video-prime`（没有 `wan-3.0`）。用最小请求（只给 prompt）逐个打一遍：
+
+| 模型 ID | HTTP | 错误码 | 说明 |
+| --- | --- | --- | --- |
+| `wan3.0-video` | 503 | `service_unavailable_error` | 在 `/v1/models` 里，但无可用上游 |
+| `wan3.0-video-prime` | 503 | `service_unavailable_error` | 同上 |
+| `wan-3.0` | 503 | `no_available_providers` | **ID 被网关识别**（不是 403 未知模型），同样无可用上游 |
+| `happyhorse-1.1-i2v` | 200 | — | 正常出片 |
+
+- 三种 503 的错误码不同，但语义都是「没有可用上游」，**改参数无用**；
+  ⚠️ 对未知模型名网关返回的是 403 `model_not_allowed`（不是 503），可据此区分「名字写错」与「没开通」。
+- ⚠️ 文档里给的示例 Key（`sk-6bf3acf4…`）实测 **401 `invalid_api_key`** —— 那是文档示例凭证，不能直接用；
+  请以你自己的渠道 Key 为准。
+- `wan-3.0` 已按「万相 3.0」纳入能力画像（时长 2–30 秒、画幅含 `adaptive`），上游开通后无需再改代码。
+
 细节契约见 [docs/interface.md](docs/interface.md)。
+
+## 官方契约对齐（2026-10-12 核对 Model Studio《万相3.0-视频产生API参考》）
+
+逐字段核对后，**确实发错的两处**已改：
+
+| 项 | 改前 | 改后 | 依据 |
+| --- | --- | --- | --- |
+| 音频素材 `type` | `driving_audio` | **`reference_audio`** | 官方枚举只有 first_frame / last_frame / reference_image / reference_video / reference_audio / file / link |
+| 待编辑视频 `type` | `video` | **`reference_video`** | 同上：官方枚举里**没有** `video` |
+
+**刻意保持不变**（有实测或成本依据，不跟随官方默认）：
+
+- 缺省 `ratio` 仍为 `16:9`：`happyhorse` 实测**拒绝 `adaptive`**（见「坑 1」），而本协议同时服务两个家族；
+- 缺省 `resolution` 仍为 `720P`（官方默认 `1080P`）—— 显式传参，固定成本；
+- **不发送**官方 `parameters.audio`（官方默认 `true`，即输出含音轨，开关声音同价）：
+  未对 happyhorse 实测前不新增字段，因此 BeefTV 里也不显示「生成音频」开关。[待验证]
+- `prompt_extend` 已默认 `true`，与官方默认一致。
+
+**按家族区分的参数**（在 BeefTV 的能力画像里实现，插件本身不做区分）：
+
+| 家族 | 时长 | 画幅枚举 |
+| --- | --- | --- |
+| `wan3.0-video` / `wan3.0-video-prime` | 2–30 秒（官方：无视频输入 [2,30] 整数） | `adaptive` + `21:9` `16:9` `4:3` `1:1` `3:4` `9:16` |
+| `happyhorse-*` | 2–15 秒（无公开文档，保守） | 9 个具名值：`16:9` `9:16` `4:3` `3:4` `1:1` `5:4` `4:5` `9:21` `21:9`（无 `adaptive`） |
+
+仍未覆盖（上游会报错，本地拦不住）：官方要求 `reference_*`/`file`/`link` 与 `first_frame`/`last_frame`
+**互斥，不能同请求混用**；现有能力模型无法表达这条约束。

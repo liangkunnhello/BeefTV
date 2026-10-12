@@ -135,6 +135,10 @@ var providerCodeCategories = map[string]FailureCategory{
 	"setlimitexceeded":                 CategoryQuotaLimit,
 	"inflightbatchsizeexceeded":        CategoryConcurrency,
 	"modelnotopen":                     CategoryPermission,
+	// 中转网关（ai-claude-code-hub）实测码：403 model_not_allowed =「当前账号未开通模型 X」，
+	// 与 modelnotopen 同义。必须显式登记：通用启发式按 "model_not" 前缀会把它归成
+	// model_missing，进而提示「请检查模型名称和渠道配置」—— 而模型名是对的，缺的是账号开通。
+	"model_not_allowed":              CategoryPermission,
 	"operationdenied.servicenotopen":   CategoryPermission,
 	"invalid_api_key":                  CategoryAuth,
 	"invalid_authentication":           CategoryAuth,

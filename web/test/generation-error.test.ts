@@ -347,7 +347,6 @@ describe("image transport errors go through the classifier", () => {
     test("readStatusError 402 is unknown billing", () => {
         expect(readStatusError(402, "请求失败")).toContain("计费或额度");
     });
-
     test("readFetchError classifies json body and strips html", async () => {
         const jsonResponse = new Response(JSON.stringify({ error: { message: "Your prompt or reference image was blocked by the content safety policy.", code: "content_policy_violation" } }), { status: 451 });
         expect(await readFetchError(jsonResponse, "请求失败")).toContain("内容安全审核");
@@ -356,5 +355,27 @@ describe("image transport errors go through the classifier", () => {
         expect(htmlMessage).toContain("暂时不可用");
         expect(htmlMessage).not.toContain("secret");
         expect(htmlMessage).not.toContain("<html");
+    });
+});
+
+// 中转网关（ai-claude-code-hub.jetmobo.com）的实测响应体，2026-10-12 抓取。
+describe("中转网关错误码归类", () => {
+    test("账号未开通模型是权限问题，不能提示检查模型名", () => {
+        const failure = explainGenerationError({
+            status: 403,
+            data: JSON.stringify({ error: { code: "model_not_allowed", message: "当前账号未开通模型 gpt-image-9，请联系管理员开通后重试" } }),
+        });
+        expect(failure.category).toBe("permission");
+        expect(failure.blockAutomaticRetry).toBe(true);
+        expect(failure.message).not.toContain("请检查模型名称");
+    });
+
+    test("无可用上游是供应商不可用，可稍后重试", () => {
+        const failure = explainGenerationError({
+            status: 503,
+            data: JSON.stringify({ error: { code: "service_unavailable_error", message: "所有供应商暂时不可用，请稍后重试" } }),
+        });
+        expect(failure.category).toBe("provider_unavailable");
+        expect(failure.message).toContain("暂时不可用");
     });
 });
