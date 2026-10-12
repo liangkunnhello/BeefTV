@@ -9,7 +9,7 @@ import { generationTaskShowsProgress, generationTaskStageLabel, generationTaskSt
 import { canvasRichTextHTML } from "@/lib/canvas/canvas-rich-text";
 import { fitNodeSize } from "@/lib/canvas/canvas-node-size";
 import { loadCanvasDrawingPreview } from "@/lib/canvas/canvas-drawing-storage";
-import { canvasNodeVideoPreviewUrl } from "@/lib/canvas/canvas-media-preview";
+import { canvasNodeHasVideoPreview, canvasNodeVideoPreviewUrl } from "@/lib/canvas/canvas-media-preview";
 import { bindCanvasVideoHoverPreview } from "@/lib/canvas/canvas-video-hover-preview";
 import { canvasVideoPresentationState } from "@/lib/canvas/canvas-video-presentation";
 import { buildLibTVImagePreviewUrl, buildLibTVVideoSourceUrl } from "@/lib/canvas/libtv-import";
@@ -591,7 +591,9 @@ function InactiveVideoPreview({ node, theme, onPlay, hoverEnabled = true, showPl
         return () => controller.abort();
     }, [nearViewport, node.id, node.metadata?.content, node.metadata?.storageKey, previewNeedsHydration]);
 
-    if (previewUrl) {
+    // 只要存在首帧记录（哪怕 content 已被清空、只剩本地 storageKey）就走预览分支：
+    // 本地键由 CachedResourceImage 现算可用地址，避免把 blob: 会话地址写进元数据后刷新即失效。
+    if (previewUrl || canvasNodeHasVideoPreview(node)) {
         return <div ref={previewRef} className="group/video-preview relative size-full overflow-hidden rounded-[var(--node-radius)] bg-black">
             <CachedResourceImage storageKey={node.metadata?.videoPreview?.storageKey} src={previewUrl} alt={`${node.title || "视频"} 静态预览`} loading="lazy" decoding="async" draggable={false} className="pointer-events-none size-full select-none object-contain" fallback={<InactiveMediaCard icon={<Video className="size-7" />} title={node.title || "视频"} hint="首帧暂不可用，点击播放视频" theme={theme} />} loadingFallback={<InactiveMediaCard icon={<Video className="size-7" />} title={node.title || "视频"} hint="正在读取首帧" theme={theme} />} />
             {showPlayButton ? <VideoPreviewPlayButton title={node.title || "视频"} onPlay={onPlay} /> : null}

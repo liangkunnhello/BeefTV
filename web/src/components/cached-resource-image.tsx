@@ -83,10 +83,16 @@ export function CachedResourceImage({ storageKey, src = "", fallback = null, loa
         if (localImageResource && storageKey) {
             void resolveImageUrl(storageKey, src)
                 .then((url) => {
-                    if (!cancelled) setCachedSrc(url || src);
+                    if (cancelled) return;
+                    setCachedSrc(url || src);
+                    // 本地缓存键也解析不出地址时，必须显式判定失败：否则会一直停在
+                    // loadingFallback（例如「正在读取首帧」）而永远不显示占位或上报错误。
+                    setCacheFailed(!url && !src);
                 })
                 .catch(() => {
-                    if (!cancelled) setCachedSrc(src);
+                    if (cancelled) return;
+                    setCachedSrc(src);
+                    setCacheFailed(!src);
                 });
             return () => {
                 cancelled = true;

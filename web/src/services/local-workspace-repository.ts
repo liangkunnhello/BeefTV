@@ -11,6 +11,17 @@ type CanvasSaveSummary = Pick<CanvasProject, "id" | "title" | "createdAt" | "upd
 const backendSaveTails = new Map<string, Promise<void>>();
 const backendSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+/**
+ * 画布保存的乐观锁冲突（HTTP 409）。
+ * 后端在 `base_revision` 落后于当前版本时以 409 拒绝；识别出来才能重读版本重试，
+ * 否则该窗口会**永久**写不进去（生成结果挂不回画布、刷新后节点消失）。
+ */
+function isCanvasRevisionConflict(error: unknown) {
+    if (!error || typeof error !== "object") return false;
+    const candidate = error as { status?: number; response?: { status?: number } };
+    return candidate.status === 409 || candidate.response?.status === 409;
+}
+
 function resourceIdFromLocator(value?: string) {
     const storageID = resourceIdFromStorageKey(value);
     if (storageID) return storageID;
@@ -102,12 +113,36 @@ export async function createLocalCanvasProject(title: string, projectId?: string
 function syncLocalCanvasProject(id: string, includeGeneratedAssets: boolean): Promise<void> {
     const previous = backendSaveTails.get(id) || Promise.resolve();
     const next = previous.catch(() => undefined).then(async () => {
-        const project = openLocalCanvasProject(id);
-        if (!project) return;
-        const assets = includeGeneratedAssets ? canvasGenerationCommitAssets(project, useAssetStore.getState().assets) : [];
-        const projectForSave = includeGeneratedAssets ? bindCanvasGenerationCommitAssets(project, assets) : project;
-        const endpoint = includeGeneratedAssets ? `/canvas-projects/${encodeURIComponent(id)}/generated-assets` : `/canvas-projects/${encodeURIComponent(id)}`;
-        const response = await http.put<{ project: CanvasSaveSummary }>(endpoint, includeGeneratedAssets ? { project: projectForSave, assets } : { project: projectForSave });
+        const buildPayload = () => {
+            const project = openLocalCanvasProject(id);
+            if (!project) return undefined;
+            const assets = includeGeneratedAssets ? canvasGenerationCommitAssets(project, useAssetStore.getState().assets) : [];
+            const projectForSave = includeGeneratedAssets ? bindCanvasGenerationCommitAssets(project, assets) : project;
+            const endpoint = includeGeneratedAssets ? `/canvas-projects/${encodeURIComponent(id)}/generated-assets` : `/canvas-projects/${encodeURIComponent(id)}`;
+            return { project, assets, endpoint, body: includeGeneratedAssets ? { project: projectForSave, assets } : { project: projectForSave } };
+        };
+        const put = (payload: NonNullable<ReturnType<typeof buildPayload>>) => http.put<{ project: CanvasSaveSummary }>(payload.endpoint, payload.body);
+
+        let payload = buildPayload();
+        if (!payload) return;
+        let response: { project: CanvasSaveSummary };
+        try {
+            response = await put(payload);
+        } catch (error) {
+            if (!isCanvasRevisionConflict(error)) throw error;
+            // 同一画布可能在多个窗口打开：另一个窗口把服务端版本推进后，本窗口的乐观版本会一直落后，
+            // 于是**每一次**保存都被 409 拒绝 —— 生成结果、节点改动就永远写不回去（表现为「生成卡住 / 刷新后节点消失」）。
+            // 与模型配置保存一致：读到服务端最新版本、采纳后重试一次。只重试一次，避免放大成写风暴。
+            const latest = await http.get<{ project?: Pick<CanvasProject, "revision"> }>(`/canvas-projects/${encodeURIComponent(id)}`);
+            const serverRevision = latest?.project?.revision;
+            if (typeof serverRevision !== "number" || !Number.isFinite(serverRevision)) throw error;
+            useCanvasStore.setState((state) => ({
+                projects: state.projects.map((item) => (item.id === id ? { ...item, revision: serverRevision } : item)),
+            }));
+            payload = buildPayload();
+            if (!payload) return;
+            response = await put(payload);
+        }
         const saved = response.project;
         if (!saved) return;
         useCanvasStore.setState((state) => ({
@@ -115,9 +150,9 @@ function syncLocalCanvasProject(id: string, includeGeneratedAssets: boolean): Pr
                 // Preserve edits made while the request was in flight; only the
                 // server-owned optimistic revision must advance.
                 ? {
-                    ...(includeGeneratedAssets ? bindCanvasGenerationCommitAssets(current, assets) : current),
+                    ...(includeGeneratedAssets ? bindCanvasGenerationCommitAssets(current, payload.assets) : current),
                     revision: saved.revision,
-                    ...(current.updatedAt === project.updatedAt ? { updatedAt: saved.updatedAt } : {}),
+                    ...(current.updatedAt === payload.project.updatedAt ? { updatedAt: saved.updatedAt } : {}),
                 }
                 : current),
         }));

@@ -308,11 +308,14 @@ function mergeSessions(input: {
 }
 
 function mergeProject(base: CanvasProject | undefined, local: CanvasProject, durable: CanvasProject, document: CanvasStorageDocument, baseRevision: number, nextRevision: number, conflicts: CanvasStorageConflict[]) {
-    if (local.revision !== durable.revision) {
-        // Never attach another tab's newer server revision to this tab's stale edits.
-        // Preserve the whole edited branch; the server will reject its stale revision.
-        if (local.revision === base?.revision && sameCanvasContent(base, local)) return { ...durable, viewport: local.viewport };
-        return local;
+    // 另一个窗口/标签写过这个项目时，`local.revision` 会落后于 `durable.revision`。
+    // 旧实现是「整份保留本地分支」——但那会连对方新增的节点一起丢掉（本地分支里没有它们）。
+    // 现在改为：**内容照常 3-way 合并**（对方的节点保留下来），但**不采纳对方的 revision**
+    // —— 版本号由服务端仲裁：本窗口仍用自己较旧的 revision 提交，保存时由
+    // `syncLocalCanvasProject` 在收到 409 后重读版本并重试一次，不会永远写不进去。
+    const staleRevision = local.revision !== durable.revision;
+    if (staleRevision && local.revision === base?.revision && sameCanvasContent(base, local)) {
+        return { ...durable, viewport: local.viewport };
     }
     const common = {
         projectId: local.id,
@@ -366,6 +369,8 @@ function mergeProject(base: CanvasProject | undefined, local: CanvasProject, dur
         local: local.chatSessions,
         durable: durable.chatSessions,
     });
+    // 版本号由服务端仲裁：合并了内容，但不把对方较新的 revision 贴到自己的改动上。
+    if (staleRevision) merged.revision = local.revision;
     return merged;
 }
 
