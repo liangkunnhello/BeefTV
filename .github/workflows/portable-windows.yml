@@ -1,0 +1,91 @@
+name: Portable Windows build
+
+# 产出「免安装版」Windows 包（解压即用），绕开 NSIS 安装器的目录替换逻辑。
+#
+# 背景：官方 desktop-installers.yml 产出的 setup.exe 在部分机器上会卡在
+# 「Installation could not replace the application」——安装器要把旧目录改名备份、
+# 再把新目录改名就位，只要目标位置有残留或被占用就会失败。
+# 免安装版没有这一层：解压出来直接双击 BeefTV.exe。
+#
+# 与官方流程的区别：只构建 Windows，额外调用 cmd/update-release package 产出 portable zip。
+# 之所以不改官方 desktop-installers.yml，是为了以后同步上游时不产生冲突。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-windows:
+    name: Build portable Windows bundle
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.15.0'
+
+      # 随包 agent-host 需要固定版本的 Node 运行时；这里直接用 setup-node 装的那份。
+      - name: Select bundled Node runtime
+        shell: bash
+        run: |
+          node -e 'const fs=require("fs"),p=require("path"); const bin=p.dirname(process.execPath); fs.appendFileSync(process.env.GITHUB_ENV, `BEEFTV_NODE_RUNTIME=${bin}\n`);'
+
+      - name: Windows compiler (MSYS2 UCRT64)
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          release: true
+          path-type: inherit
+          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-binutils
+
+      - name: Verify Windows CGO toolchain
+        env:
+          MSYSTEM_PREFIX: ${{ steps.msys2.outputs.msys2-location }}\ucrt64
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\assert-windows-dwarf5-cgo.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build Windows desktop
+        env:
+          CGO_ENABLED: '1'
+          BEEFTV_UPDATER_PUBLIC_KEY: ${{ vars.BEEFTV_UPDATER_PUBLIC_KEY }}
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-beeftv-windows-release.ps1
+
+      # 免安装包：直接打包 backend/cmd/desktop/build/bin 这个安装目录。
+      # 工具会校验 BeefTV.exe、cli/beeftv.exe、agent-host（含 Node 运行时）与插件是否齐全。
+      - name: Package portable zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          mkdir -p dist
+          cd backend
+          go run ./cmd/update-release package \
+            --platform windows-amd64 \
+            --input cmd/desktop/build/bin \
+            --output "../dist/BeefTV-${version}-windows-amd64-portable.zip"
+
+      - name: Upload portable bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-windows-amd64
+          path: dist/BeefTV-*-windows-amd64-portable.zip
+          if-no-files-found: error
+          retention-days: 7
